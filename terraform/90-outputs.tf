@@ -201,3 +201,14 @@ output "gitops_bootstrap_script_path" {
   value       = module.cluster.gitops_bootstrap_script_path
   sensitive   = false
 }
+
+#------------------------------------------------------------------------------
+# Cluster Creation Timing (when enable_timing = true)
+#------------------------------------------------------------------------------
+# Reference: ./reference/rosa-tf/environments/commercial-hcp/outputs.tf:309-315
+
+output "cluster_creation_timing" {
+  description = "Cluster creation timing summary (only populated when enable_timing = true)."
+  value       = var.enable_timing ? module.cluster_timing.timing_summary : null
+  sensitive   = false
+}

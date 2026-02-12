@@ -846,12 +846,18 @@ The following files should be downloaded/exported to the `./reference/` director
 
 ## Contributing
 
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+**Quick Start:**
 1. Review [PLAN.md](PLAN.md) before making changes
 2. Follow [.cursorrules](.cursorrules) guidelines
 3. Check `./reference/` repositories for similar patterns before implementing new features
-4. Update [CHANGELOG.md](CHANGELOG.md) with changes
-5. Ensure all code passes `terraform fmt` and `terraform validate`
-6. Run security scanning with `checkov`
+4. Install development tools (see [CONTRIBUTING.md](CONTRIBUTING.md) for macOS/Linux instructions)
+5. Run tests: `make test`
+6. Update [CHANGELOG.md](CHANGELOG.md) with changes
+7. Ensure all code passes linting: `make lint`
+
+For detailed setup instructions, development workflow, and code style guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## References
 

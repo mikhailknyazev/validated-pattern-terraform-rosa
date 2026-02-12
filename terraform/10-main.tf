@@ -64,9 +64,9 @@ module "iam" {
   source = "../modules/infrastructure/iam"
 
   cluster_name               = var.cluster_name
-  account_role_prefix        = var.cluster_name     # No trailing dash - account-iam-resources module adds it
-  operator_role_prefix       = var.cluster_name     # No trailing dash - operator-roles module adds it
-  zero_egress                = var.zero_egress     # Pass directly - IAM needs ECR policy when zero_egress is enabled (independent of network_type)
+  account_role_prefix        = var.cluster_name # No trailing dash - account-iam-resources module adds it
+  operator_role_prefix       = var.cluster_name # No trailing dash - operator-roles module adds it
+  zero_egress                = var.zero_egress  # Pass directly - IAM needs ECR policy when zero_egress is enabled (independent of network_type)
   tags                       = local.tags
   persists_through_sleep     = var.persists_through_sleep
   persists_through_sleep_iam = var.persists_through_sleep_iam
@@ -100,8 +100,8 @@ module "cluster" {
   # Subnet selection - pass private and public separately, cluster module will concatenate
   # Public clusters use both private and public subnets
   # Private and egress-zero clusters use only private subnets
-  private_subnet_ids = local.network.private_subnet_ids
-  public_subnet_ids = coalesce(local.network.public_subnet_ids, [])
+  private_subnet_ids             = local.network.private_subnet_ids
+  public_subnet_ids              = coalesce(local.network.public_subnet_ids, [])
   installer_role_arn             = module.iam.installer_role_arn
   support_role_arn               = module.iam.support_role_arn
   worker_role_arn                = module.iam.worker_role_arn
@@ -114,9 +114,9 @@ module "cluster" {
   # Cluster configuration
   # Note: zero_egress is a cluster-level ROSA API property, independent of network_type
   # However, zero egress typically requires private network (PrivateLink API endpoint)
-  private     = var.private
-  zero_egress = var.zero_egress  # Pass directly - cluster-level property, not tied to network
-  multi_az    = var.multi_az
+  private            = var.private
+  zero_egress        = var.zero_egress # Pass directly - cluster-level property, not tied to network
+  multi_az           = var.multi_az
   availability_zones = local.network.private_subnet_azs
   fips               = var.fips
 
@@ -214,6 +214,23 @@ module "cluster" {
   # Since cluster depends on IAM outputs, cluster will be destroyed first
   # This matches the reference implementation: https://github.com/rh-mobb/terraform-rosa/blob/main/04-cluster.tf#L136
   depends_on = [module.network_public, module.network_private, module.iam]
+}
+
+#------------------------------------------------------------------------------
+# Cluster Creation Timing (Optional)
+#------------------------------------------------------------------------------
+# Reference: ./reference/rosa-tf/environments/commercial-hcp/main.tf:774-785
+
+module "cluster_timing" {
+  source = "../modules/utility/timing"
+
+  enabled = var.enable_timing
+  stage   = "cluster-creation"
+
+  # Track cluster completion - timing ends when cluster is ready
+  # Pass cluster_id directly - Terraform will handle the dependency
+  # When enabled=false, dependency_ids is ignored anyway
+  dependency_ids = [module.cluster.cluster_id]
 }
 
 # Admin Password Management

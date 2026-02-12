@@ -38,9 +38,9 @@ locals {
   # HCP: if unspecified and multi-az, use 1 per availability zone (total = 1 * number of AZs); if unspecified and single-az, use 2
   # NOTE: hcp_replicas is the TOTAL number of replicas across all availability zones, not per AZ
   # For ROSA HCP: multi_az=true means 3 AZs, multi_az=false means 1 AZ
-  is_multi_az = var.multi_az
+  is_multi_az            = var.multi_az
   num_availability_zones = var.multi_az ? 3 : 1
-  autoscaling_enabled = true # Default pool always uses autoscaling
+  autoscaling_enabled    = true # Default pool always uses autoscaling
 
   # Calculate default min/max replicas per pool if not provided
   # Single-AZ: min = 2 (minimum for HA), max = 4 (double min) per pool
@@ -241,12 +241,16 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   # Explicit dependency on IAM outputs ensures cluster is destroyed BEFORE IAM during destroy
   # During destroy, Terraform destroys resources in reverse dependency order
   # Since cluster depends on IAM outputs, cluster will be destroyed first
+  #
+  # Dependency on cleanup resource ensures cleanup runs AFTER cluster is destroyed
+  # On destroy: cleanup waits for cluster (reverse dependency order)
   depends_on = [
     var.installer_role_arn,
     var.support_role_arn,
     var.worker_role_arn,
     var.oidc_config_id,
-    var.oidc_endpoint_url
+    var.oidc_endpoint_url,
+    null_resource.cleanup_rosa_security_groups
   ]
 }
 
@@ -488,9 +492,9 @@ locals {
     for pair in flatten([
       for sg_id in data.aws_vpc_endpoint.rosa_api[0].security_group_ids : [
         for cidr in var.api_endpoint_allowed_cidrs : {
-          key = "${sg_id}_${replace(cidr, "/", "_")}"
+          key               = "${sg_id}_${replace(cidr, "/", "_")}"
           security_group_id = sg_id
-          cidr = cidr
+          cidr              = cidr
         }
       ]
     ]) : pair.key => pair

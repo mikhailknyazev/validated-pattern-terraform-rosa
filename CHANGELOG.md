@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Actions CI/CD Workflows**: Added automated Terraform and shell script validation and quality checks
+  - `terraform-pr-checks.yml`: Runs on pull requests to validate Terraform code and shell scripts
+  - `terraform-master-checks.yml`: Runs on pushes to main/master branches
+  - **Terraform checks**: Formatting (`terraform fmt -check`), TFLint linting, validation for all modules and root config, init for all modules
+  - **Shell script checks**: ShellCheck linting and shfmt formatting checks for all scripts in `scripts/` directory
+  - TFLint configuration (`.tflint.hcl`) with AWS provider plugin and Terraform best practices
+  - ShellCheck configuration (`.shellcheckrc`) for shell script linting rules
+  - Workflows run in parallel for faster feedback
+  - Note: Terraform plan is not included by default (requires AWS credentials and RHCS token)
+  - Documentation updated in `docs/CI_CD.md` with workflow details and local testing instructions
+- **Makefile Targets for Code Quality**: Reorganized Makefile with consistent `tf-` and `sh-` prefixes
+  - **Terraform targets**: `tf-fmt`, `tf-fmt-check`, `tf-validate`, `tf-validate-modules`, `tf-validate-root`
+  - **Shell script targets**: `sh-fmt`, `sh-fmt-check`, `sh-lint`, `sh-lint-fix`
+  - **Combined targets**: `fmt` (runs `tf-fmt` and `sh-fmt`), `fmt-check` (runs `tf-fmt-check` and `sh-fmt-check`), `validate` (runs `tf-validate` and `sh-lint`), `lint` (runs `tf-fmt-check`, `sh-fmt-check`, and `sh-lint`), `lint-fix` (runs `tf-fmt` and `sh-fmt`), `test` (runs all checks)
+  - All targets include helpful error messages with installation instructions
+  - Clear separation between Terraform and shell script operations
+- **Contributing Guide**: Added comprehensive `CONTRIBUTING.md` guide
+  - Development setup instructions for macOS, Ubuntu/Debian, and RHEL/CentOS/Fedora
+  - Installation instructions for all required tools (Terraform, AWS CLI, OpenShift CLI, ShellCheck, shfmt, TFLint)
+  - Development workflow (fork, clone, branch, test, commit, PR)
+  - Code quality guidelines and testing instructions
+  - Code style guidelines for Terraform and shell scripts
+  - Pull request checklist and process
+- **macOS Installation Instructions**: Added macOS-specific installation instructions
+  - Homebrew installation commands for all development tools
+  - Updated `docs/CI_CD.md` with macOS instructions
+  - Makefile targets detect missing tools and provide macOS installation hints
+
 ### Changed
 - **BREAKING**: Renamed `enable_strict_egress` variable to `zero_egress` throughout the codebase
   - Root module: `terraform/01-variables.tf` - variable renamed from `enable_strict_egress` to `zero_egress`

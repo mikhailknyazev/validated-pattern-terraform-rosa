@@ -20,7 +20,7 @@ check-cluster:
 	@$(SCRIPT_DIR)/utils/check-cluster.sh $(CLUSTER_NAME)
 
 .PHONY: help init plan apply destroy destroy_force sleep fmt validate clean
-.PHONY: show-endpoints show-credentials login verify
+.PHONY: show-endpoints show-credentials show-timing login verify
 .PHONY: tunnel-start tunnel-stop tunnel-status bastion-connect
 .PHONY: bootstrap ensure-tunnel
 
@@ -51,6 +51,7 @@ help: ## Show this help message
 	echo "$(GREEN)Cluster Access:$(NC)"; \
 	echo "  make cluster.$(CLUSTER_NAME).show-endpoints    Show API and console URLs"; \
 	echo "  make cluster.$(CLUSTER_NAME).show-credentials Show admin credentials and endpoints"; \
+	echo "  make cluster.$(CLUSTER_NAME).show-timing      Show cluster creation timing"; \
 	echo "  make cluster.$(CLUSTER_NAME).login             Login to cluster using oc CLI"; \
 	echo "  make cluster.$(CLUSTER_NAME).verify           Verify cluster deployment and GitOps"; \
 	echo ""; \
@@ -125,6 +126,35 @@ show-endpoints: check-cluster
 
 show-credentials: show-endpoints
 	@$(SCRIPT_DIR)/info/show-credentials.sh $(CLUSTER_NAME)
+
+show-timing: check-cluster
+	@echo "$(BLUE)Cluster Creation Timing for $(CLUSTER_NAME):$(NC)"
+	@cd $(TERRAFORM_DIR) && \
+		if command -v jq >/dev/null 2>&1; then \
+			TIMING=$$(terraform output -no-color -json cluster_creation_timing 2>/dev/null | jq -r '.' 2>/dev/null || echo "null") && \
+			if [ "$$TIMING" = "null" ] || [ -z "$$TIMING" ]; then \
+				echo "$(YELLOW)Timing not available. Ensure enable_timing=true in terraform.tfvars and run terraform apply.$(NC)"; \
+				exit 0; \
+			fi && \
+			echo "" && \
+			echo "  Stage:            $$(echo $$TIMING | jq -r '.stage // "N/A"')" && \
+			echo "  Start Time:       $$(echo $$TIMING | jq -r '.start_time // "N/A"')" && \
+			echo "  End Time:         $$(echo $$TIMING | jq -r '.end_time // "N/A"')" && \
+			echo "  Duration:         $$(echo $$TIMING | jq -r '.duration_human // "N/A"')" && \
+			echo "  Duration (sec):   $$(echo $$TIMING | jq -r '.duration_seconds // "N/A"')" && \
+			echo ""; \
+		else \
+			TIMING=$$(terraform output -no-color cluster_creation_timing 2>/dev/null || echo "") && \
+			if [ -z "$$TIMING" ] || echo "$$TIMING" | grep -q "null"; then \
+				echo "$(YELLOW)Timing not available. Ensure enable_timing=true in terraform.tfvars and run terraform apply.$(NC)"; \
+				echo "$(YELLOW)Note: Install 'jq' for formatted output: brew install jq$(NC)"; \
+				exit 0; \
+			fi && \
+			echo "" && \
+			echo "$$TIMING" && \
+			echo "" && \
+			echo "$(YELLOW)Note: Install 'jq' for better formatted output: brew install jq$(NC)"; \
+		fi
 
 login: check-cluster ensure-tunnel
 	@$(SCRIPT_DIR)/info/login.sh $(CLUSTER_NAME)

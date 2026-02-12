@@ -6,13 +6,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/../common.sh"
 
 CLUSTER_NAME="${1:-}"
 if [ -z "$CLUSTER_NAME" ]; then
-    error "Usage: $0 <cluster-name>"
-    exit 1
+	error "Usage: $0 <cluster-name>"
+	exit 1
 fi
 
 CLUSTER_DIR=$(get_cluster_dir "$CLUSTER_NAME")
@@ -23,12 +23,12 @@ warn "AWS resources (cluster, VPC, IAM roles, etc.) will be deleted."
 
 # Prompt for confirmation unless AUTO_APPROVE is set
 if [ "${AUTO_APPROVE:-}" != "true" ]; then
-    echo -n "Are you sure you want to continue? (yes/no): "
-    read -r confirmation
-    if [ "$confirmation" != "yes" ]; then
-        info "Destroy cancelled"
-        exit 0
-    fi
+	echo -n "Are you sure you want to continue? (yes/no): "
+	read -r confirmation
+	if [ "$confirmation" != "yes" ]; then
+		info "Destroy cancelled"
+		exit 0
+	fi
 fi
 
 info "Destroying infrastructure..."
@@ -40,72 +40,62 @@ CLUSTER_TFVARS="$CLUSTER_DIR/terraform.tfvars"
 
 # Remove any stale plan files that might interfere
 if [ -f "$CLUSTER_DIR/terraform.tfplan" ]; then
-  info "Removing stale plan file to ensure fresh destroy plan..."
-  rm -f "$CLUSTER_DIR/terraform.tfplan"
+	info "Removing stale plan file to ensure fresh destroy plan..."
+	rm -f "$CLUSTER_DIR/terraform.tfplan"
 fi
 
-# CRITICAL: Remove default machine pools from state before destroy
-# ROSA automatically deletes default machine pools when the cluster is destroyed.
-# Attempting to delete them manually causes errors because ROSA requires at least 2 replicas.
-# Removing them from state prevents Terraform from trying to delete them.
-# Note: ignore_deletion_error = true is also set on the resources as a fallback, but state removal
-# is more efficient as it avoids failed API calls.
-# Reference: ./reference/terraform-provider-rhcs/docs/guides/deleting-clusters-with-removed-initial-worker-pools.md
-info "Removing default machine pools from Terraform state (ROSA will delete them automatically)..."
+# MACHINE_POOL_ARRAY=()
+# while IFS= read -r resource_address; do
+# 	[ -n "$resource_address" ] && MACHINE_POOL_ARRAY+=("$resource_address")
+# done < <(terraform state list -var-file="$CLUSTER_TFVARS" 2>/dev/null | grep -E "module\.cluster\.rhcs_hcp_machine_pool\.default\[" || true)
 
-# Get list of machine pools to remove (use array to avoid subshell issues)
-MACHINE_POOL_ARRAY=()
-while IFS= read -r resource_address; do
-  [ -n "$resource_address" ] && MACHINE_POOL_ARRAY+=("$resource_address")
-done < <(terraform state list -var-file="$CLUSTER_TFVARS" 2>/dev/null | grep -E "module\.cluster\.rhcs_hcp_machine_pool\.default\[" || true)
+# if [ ${#MACHINE_POOL_ARRAY[@]} -gt 0 ]; then
+# 	for resource_address in "${MACHINE_POOL_ARRAY[@]}"; do
+# 		info "Removing $resource_address from state"
+# 		if terraform state rm -var-file="$CLUSTER_TFVARS" "$resource_address" 2>/dev/null; then
+# 			info "Successfully removed $resource_address from state"
+# 		else
+# 			warn "Could not remove $resource_address from state (may not exist or already removed)"
+# 		fi
+# 	done
+# else
+# 	info "No default machine pools found in state (may already be removed or cluster not created)"
+# fi
 
-if [ ${#MACHINE_POOL_ARRAY[@]} -gt 0 ]; then
-  for resource_address in "${MACHINE_POOL_ARRAY[@]}"; do
-    info "Removing $resource_address from state"
-    if terraform state rm -var-file="$CLUSTER_TFVARS" "$resource_address" 2>/dev/null; then
-      info "Successfully removed $resource_address from state"
-    else
-      warn "Could not remove $resource_address from state (may not exist or already removed)"
-    fi
-  done
-else
-  info "No default machine pools found in state (may already be removed or cluster not created)"
-fi
+# # Also remove data sources for default machine pools (they'll be cleaned up automatically)
+# info "Removing default machine pool data sources from Terraform state..."
+# MACHINE_POOL_DATA_ARRAY=()
+# while IFS= read -r resource_address; do
+# 	[ -n "$resource_address" ] && MACHINE_POOL_DATA_ARRAY+=("$resource_address")
+# done < <(terraform state list -var-file="$CLUSTER_TFVARS" 2>/dev/null | grep -E "module\.cluster\.data\.rhcs_hcp_machine_pool\.default\[" || true)
 
-# Also remove data sources for default machine pools (they'll be cleaned up automatically)
-info "Removing default machine pool data sources from Terraform state..."
-MACHINE_POOL_DATA_ARRAY=()
-while IFS= read -r resource_address; do
-  [ -n "$resource_address" ] && MACHINE_POOL_DATA_ARRAY+=("$resource_address")
-done < <(terraform state list -var-file="$CLUSTER_TFVARS" 2>/dev/null | grep -E "module\.cluster\.data\.rhcs_hcp_machine_pool\.default\[" || true)
+# if [ ${#MACHINE_POOL_DATA_ARRAY[@]} -gt 0 ]; then
+# 	for resource_address in "${MACHINE_POOL_DATA_ARRAY[@]}"; do
+# 		info "Removing $resource_address from state"
+# 		if terraform state rm -var-file="$CLUSTER_TFVARS" "$resource_address" 2>/dev/null; then
+# 			info "Successfully removed $resource_address from state"
+# 		else
+# 			warn "Could not remove $resource_address from state (may not exist or already removed)"
+# 		fi
+# 	done
+# else
+# 	info "No default machine pool data sources found in state"
+# fi
 
-if [ ${#MACHINE_POOL_DATA_ARRAY[@]} -gt 0 ]; then
-  for resource_address in "${MACHINE_POOL_DATA_ARRAY[@]}"; do
-    info "Removing $resource_address from state"
-    if terraform state rm -var-file="$CLUSTER_TFVARS" "$resource_address" 2>/dev/null; then
-      info "Successfully removed $resource_address from state"
-    else
-      warn "Could not remove $resource_address from state (may not exist or already removed)"
-    fi
-  done
-else
-  info "No default machine pool data sources found in state"
-fi
-
-# Verify removal was successful
-REMAINING_POOLS=$(terraform state list -var-file="$CLUSTER_TFVARS" 2>/dev/null | grep -E "module\.cluster\.rhcs_hcp_machine_pool\.default\[" || true)
-if [ -n "$REMAINING_POOLS" ]; then
-  warn "Warning: Some machine pools may still be in state:"
-  echo "$REMAINING_POOLS" | while IFS= read -r line; do
-    warn "  - $line"
-  done
-  warn "Terraform may still attempt to delete these. ignore_deletion_error should handle failures gracefully."
-fi
+# # Verify removal was successful
+# REMAINING_POOLS=$(terraform state list -var-file="$CLUSTER_TFVARS" 2>/dev/null | grep -E "module\.cluster\.rhcs_hcp_machine_pool\.default\[" || true)
+# if [ -n "$REMAINING_POOLS" ]; then
+# 	warn "Warning: Some machine pools may still be in state:"
+# 	echo "$REMAINING_POOLS" | while IFS= read -r line; do
+# 		warn "  - $line"
+# 	done
+# 	warn "Terraform may still attempt to delete these. ignore_deletion_error should handle failures gracefully."
+# fi
 
 info "Destroying remaining infrastructure..."
 terraform destroy \
-    -var-file="$CLUSTER_TFVARS" \
-    -auto-approve
+	-var-file="$CLUSTER_TFVARS" \
+	-auto-approve
 
 success "Infrastructure destroyed successfully"
 success "Note: Default machine pools were removed from state and will be deleted automatically by ROSA when the cluster is destroyed"

@@ -1,5 +1,8 @@
-.PHONY: help init plan apply destroy fmt fmt-check validate validate-modules validate-root test clean
+.PHONY: help init plan apply destroy test clean
 .PHONY: init-all plan-all install-provider
+.PHONY: fmt fmt-check validate lint lint-fix
+.PHONY: tf-fmt tf-fmt-check tf-validate tf-validate-modules tf-validate-root
+.PHONY: sh-fmt sh-fmt-check sh-lint sh-lint-fix
 .DEFAULT_GOAL := help
 
 include Makefile.common
@@ -59,6 +62,7 @@ help: ## Show this help message
 	@echo "$(GREEN)Cluster Access:$(NC)"
 	@echo "  cluster.<type>.show-endpoints    Show API and console URLs"
 	@echo "  cluster.<type>.show-credentials Show admin credentials and endpoints"
+	@echo "  cluster.<type>.show-timing      Show cluster creation timing"
 	@echo "  cluster.<type>.login             Login to cluster using oc CLI"
 	@echo ""
 	@echo "$(GREEN)Bastion & Tunnel Management:$(NC)"
@@ -68,12 +72,27 @@ help: ## Show this help message
 	@echo "  cluster.<type>.bastion-connect   Connect to bastion via SSM Session Manager"
 	@echo ""
 	@echo "$(GREEN)Global Targets:$(NC)"
-	@echo "  make test                 Run all tests (format check and validation)"
-	@echo "  make fmt                  Format all Terraform files"
-	@echo "  make fmt-check            Check Terraform formatting (does not modify)"
-	@echo "  make validate             Validate all Terraform modules and root config"
-	@echo "  make validate-modules     Validate all Terraform modules"
-	@echo "  make validate-root        Validate root Terraform configuration"
+	@echo "  make test                 Run all tests (format check, validation, and linting)"
+	@echo "  make fmt                  Format all files (Terraform and shell scripts)"
+	@echo "  make fmt-check            Check formatting for all files (does not modify)"
+	@echo "  make validate             Validate all code (Terraform and shell scripts)"
+	@echo "  make lint                 Run all linting checks (Terraform and shell scripts)"
+	@echo "  make lint-fix             Fix auto-fixable linting issues"
+	@echo ""
+	@echo "$(GREEN)Terraform:$(NC)"
+	@echo "  make tf-fmt               Format all Terraform files"
+	@echo "  make tf-fmt-check         Check Terraform formatting (does not modify)"
+	@echo "  make tf-validate          Validate all Terraform modules and root config"
+	@echo "  make tf-validate-modules  Validate all Terraform modules"
+	@echo "  make tf-validate-root     Validate root Terraform configuration"
+	@echo ""
+	@echo "$(GREEN)Shell Scripts:$(NC)"
+	@echo "  make sh-fmt               Format all shell scripts with shfmt"
+	@echo "  make sh-fmt-check         Check shell script formatting (does not modify)"
+	@echo "  make sh-lint              Lint all shell scripts with ShellCheck"
+	@echo "  make sh-lint-fix          Show ShellCheck issues (interactive fix)"
+	@echo ""
+	@echo "$(GREEN)Utilities:$(NC)"
 	@echo "  make clean                Clean Terraform files"
 	@echo "  make install-provider     Install OpenShift operator provider"
 	@echo ""
@@ -81,23 +100,24 @@ help: ## Show this help message
 	@echo "  Note: By default, persists_through_sleep=true keeps cluster active"
 	@echo "        When persists_through_sleep=false, cluster is put to sleep (resources destroyed)"
 
-# Code quality
-fmt: ## Format all Terraform files
+# Terraform targets
+tf-fmt: ## Format all Terraform files
 	@echo "$(BLUE)Formatting Terraform files...$(NC)"
 	terraform fmt -recursive
+	@echo "$(GREEN)✓ Terraform files formatted$(NC)"
 
-fmt-check: ## Check Terraform formatting (does not modify files)
+tf-fmt-check: ## Check Terraform formatting (does not modify files)
 	@echo "$(BLUE)Checking Terraform formatting...$(NC)"
 	@if terraform fmt -check -recursive; then \
 		echo "$(GREEN)✓ All Terraform files are properly formatted$(NC)"; \
 	else \
-		echo "$(RED)✗ Some Terraform files need formatting. Run 'make fmt' to fix.$(NC)"; \
+		echo "$(RED)✗ Some Terraform files need formatting. Run 'make tf-fmt' to fix.$(NC)"; \
 		exit 1; \
 	fi
 
-validate: validate-modules validate-root ## Validate all Terraform code
+tf-validate: tf-validate-modules tf-validate-root ## Validate all Terraform code
 
-validate-modules: ## Validate all modules
+tf-validate-modules: ## Validate all Terraform modules
 	@echo "$(BLUE)Validating modules...$(NC)"
 	@FAILED=0; \
 	for dir in modules/infrastructure/*/; do \
@@ -126,7 +146,7 @@ validate-modules: ## Validate all modules
 		echo "$(GREEN)✓ All modules validated successfully$(NC)"; \
 	fi
 
-validate-root: ## Validate root Terraform configuration
+tf-validate-root: ## Validate root Terraform configuration
 	@echo "$(BLUE)Validating root Terraform configuration...$(NC)"
 	@cd terraform && \
 	if terraform init -backend=false >/dev/null 2>&1; then \
@@ -144,7 +164,96 @@ validate-root: ## Validate root Terraform configuration
 		cd - >/dev/null; \
 	fi
 
-test: fmt-check validate ## Run all tests (format check and validation)
+# Shell script targets
+sh-fmt: ## Format all shell scripts with shfmt
+	@echo "$(BLUE)Formatting shell scripts with shfmt...$(NC)"
+	@if ! command -v shfmt >/dev/null 2>&1; then \
+		echo "$(RED)✗ shfmt not found. Install it first:$(NC)"; \
+		echo "$(YELLOW)  macOS: brew install shfmt$(NC)"; \
+		echo "$(YELLOW)  Linux: See https://github.com/mvdan/sh#shfmt$(NC)"; \
+		exit 1; \
+	fi
+	@find scripts -name "*.sh" -type f -exec shfmt -w {} \;
+	@echo "$(GREEN)✓ Shell scripts formatted$(NC)"
+
+sh-fmt-check: ## Check shell script formatting (does not modify files)
+	@echo "$(BLUE)Checking shell script formatting...$(NC)"
+	@if ! command -v shfmt >/dev/null 2>&1; then \
+		echo "$(RED)✗ shfmt not found. Install it first:$(NC)"; \
+		echo "$(YELLOW)  macOS: brew install shfmt$(NC)"; \
+		echo "$(YELLOW)  Linux: See https://github.com/mvdan/sh#shfmt$(NC)"; \
+		exit 1; \
+	fi
+	@FAILED=0; \
+	for script in $$(find scripts -name "*.sh" -type f); do \
+		if shfmt -d "$$script" >/dev/null 2>&1; then \
+			echo "  $(GREEN)✓ $$script$(NC)"; \
+		else \
+			echo "  $(RED)✗ $$script needs formatting$(NC)"; \
+			shfmt -d "$$script"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	if [ $$FAILED -eq 1 ]; then \
+		echo "$(RED)✗ Some shell scripts need formatting. Run 'make sh-fmt' to fix.$(NC)"; \
+		exit 1; \
+	else \
+		echo "$(GREEN)✓ All shell scripts are properly formatted$(NC)"; \
+	fi
+
+sh-lint: ## Lint all shell scripts with ShellCheck
+	@echo "$(BLUE)Linting shell scripts with ShellCheck...$(NC)"
+	@if ! command -v shellcheck >/dev/null 2>&1; then \
+		echo "$(RED)✗ ShellCheck not found. Install it first:$(NC)"; \
+		echo "$(YELLOW)  macOS: brew install shellcheck$(NC)"; \
+		echo "$(YELLOW)  Linux: sudo apt-get install shellcheck$(NC)"; \
+		exit 1; \
+	fi
+	@FAILED=0; \
+	for script in $$(find scripts -name "*.sh" -type f); do \
+		echo "Checking $$script..."; \
+		if shellcheck -x "$$script"; then \
+			echo "  $(GREEN)✓ $$script$(NC)"; \
+		else \
+			echo "  $(RED)✗ $$script$(NC)"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	if [ $$FAILED -eq 1 ]; then \
+		echo "$(RED)✗ Some shell scripts failed ShellCheck$(NC)"; \
+		exit 1; \
+	else \
+		echo "$(GREEN)✓ All shell scripts passed ShellCheck$(NC)"; \
+	fi
+
+sh-lint-fix: ## Show ShellCheck issues (requires manual fixes)
+	@echo "$(BLUE)Running ShellCheck on all shell scripts...$(NC)"
+	@if ! command -v shellcheck >/dev/null 2>&1; then \
+		echo "$(RED)✗ ShellCheck not found. Install it first:$(NC)"; \
+		echo "$(YELLOW)  macOS: brew install shellcheck$(NC)"; \
+		echo "$(YELLOW)  Linux: sudo apt-get install shellcheck$(NC)"; \
+		exit 1; \
+	fi
+	@find scripts -name "*.sh" -type f -exec shellcheck -x {} \;
+
+# Combined targets
+fmt: tf-fmt sh-fmt ## Format all files (Terraform and shell scripts)
+	@echo "$(GREEN)✓ All files formatted$(NC)"
+
+fmt-check: tf-fmt-check sh-fmt-check ## Check formatting for all files (does not modify)
+	@echo "$(GREEN)✓ All files are properly formatted$(NC)"
+
+validate: tf-validate sh-lint ## Validate all code (Terraform and shell scripts)
+	@echo "$(GREEN)✓ All code validated successfully$(NC)"
+
+lint: tf-fmt-check sh-fmt-check sh-lint ## Run all linting checks (Terraform and shell scripts)
+	@echo "$(GREEN)✓ All linting checks passed$(NC)"
+
+lint-fix: tf-fmt sh-fmt ## Fix auto-fixable linting issues (Terraform and shell formatting)
+	@echo "$(GREEN)✓ Auto-fixable issues resolved$(NC)"
+	@echo "$(YELLOW)Note: Review ShellCheck warnings manually with 'make sh-lint-fix'$(NC)"
+
+test: tf-fmt-check tf-validate sh-lint sh-fmt-check  ## Run all tests (format check, validation, and linting)
 	@echo "$(GREEN)✓ All tests passed$(NC)"
 
 # Install OpenShift Provider

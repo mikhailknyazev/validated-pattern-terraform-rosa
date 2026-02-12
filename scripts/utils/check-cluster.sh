@@ -6,13 +6,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/../common.sh"
 
 CLUSTER_NAME="${1:-}"
 if [ -z "$CLUSTER_NAME" ]; then
-    error "Usage: $0 <cluster_name>"
-    exit 1
+	error "Usage: $0 <cluster_name>"
+	exit 1
 fi
 
 get_cluster_dir "$CLUSTER_NAME" >/dev/null

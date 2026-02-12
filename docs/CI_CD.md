@@ -17,7 +17,138 @@ All cluster operations are implemented as bash scripts in the `scripts/` directo
 
 See [scripts/README.md](../scripts/README.md) for complete documentation.
 
-## GitHub Actions Example
+## GitHub Actions Workflows
+
+This repository includes pre-configured GitHub Actions workflows for automated Terraform validation and quality checks:
+
+### Available Workflows
+
+1. **`terraform-pr-checks.yml`** - Runs on pull requests
+   - Terraform formatting check (`terraform fmt -check`)
+   - Terraform linting (TFLint)
+   - Terraform validation for all modules
+   - Terraform validation for root configuration
+   - Terraform init for all modules
+   - Shell script linting (ShellCheck)
+   - Shell script formatting check (shfmt)
+
+2. **`terraform-master-checks.yml`** - Runs on pushes to `main`/`master`
+   - Same checks as PR workflow
+   - Ensures code quality before merging
+
+### What Gets Checked
+
+**Terraform:**
+- **Formatting**: Ensures all Terraform files follow standard formatting
+- **Linting**: Uses TFLint to catch common errors and best practice violations
+- **Validation**: Validates Terraform syntax and configuration correctness
+- **Init**: Verifies that all modules can initialize without errors
+
+**Shell Scripts:**
+- **Linting**: Uses ShellCheck to catch common shell script errors and best practices
+- **Formatting**: Uses shfmt to ensure consistent shell script formatting
+- All scripts in the `scripts/` directory are checked
+
+### Terraform Plan
+
+Terraform plan is **not** included in the default workflows because it requires:
+- AWS credentials
+- Red Hat Cloud Services (RHCS) token
+- Valid cluster configuration
+
+To enable terraform plan in CI/CD:
+1. Uncomment the `terraform-plan` job in the workflow file
+2. Configure GitHub secrets:
+   - `AWS_ACCESS_KEY_ID`
+   - `AWS_SECRET_ACCESS_KEY`
+   - `RHCS_TOKEN`
+   - `TF_STATE_BUCKET` (optional, for remote backend)
+   - `TF_STATE_LOCK_TABLE` (optional, for state locking)
+
+### Running Checks Locally
+
+You can run the same checks locally:
+
+**Terraform:**
+```bash
+# Check formatting
+make tf-fmt-check
+
+# Validate all modules and root config
+make tf-validate
+
+# Run all tests (format check + validation)
+make test
+```
+
+**Shell Scripts:**
+
+*Linux (Ubuntu/Debian):*
+```bash
+# Install ShellCheck
+sudo apt-get install shellcheck
+
+# Install shfmt
+wget -q https://github.com/mvdan/sh/releases/download/v3.7.0/shfmt_v3.7.0_linux_amd64 -O shfmt
+chmod +x shfmt
+sudo mv shfmt /usr/local/bin/
+```
+
+*macOS:*
+```bash
+# Install ShellCheck and shfmt via Homebrew
+brew install shellcheck shfmt
+```
+
+*Using Makefile (recommended):*
+```bash
+# Run ShellCheck on all scripts
+make sh-lint
+
+# Check formatting with shfmt
+make sh-fmt-check
+
+# Format scripts (fixes formatting issues)
+make sh-fmt
+
+# Run all linting checks (Terraform and shell scripts)
+make lint
+
+# Fix auto-fixable issues (Terraform and shell formatting)
+make lint-fix
+
+# Or use combined targets
+make fmt          # Format all files (Terraform + shell scripts)
+make fmt-check    # Check formatting for all files
+make validate     # Validate all code (Terraform + shell scripts)
+```
+
+*Manual commands:*
+```bash
+# Run ShellCheck on all scripts
+find scripts -name "*.sh" -type f -exec shellcheck -x {} \;
+
+# Check formatting with shfmt
+find scripts -name "*.sh" -type f -exec shfmt -d {} \;
+
+# Format scripts (fixes formatting issues)
+find scripts -name "*.sh" -type f -exec shfmt -w {} \;
+```
+
+### Configuration Files
+
+**TFLint Configuration (`.tflint.hcl`):**
+- Enables AWS provider plugin
+- Enforces Terraform best practices
+- Checks for deprecated syntax
+- Validates variable and output documentation
+
+**ShellCheck Configuration (`.shellcheckrc`):**
+- Configures ShellCheck linting rules
+- Can be overridden per-script with shellcheck directives
+- Example: `# shellcheck disable=SC2086` to disable specific warnings
+
+## GitHub Actions Example (Deployment)
 
 ```yaml
 name: Deploy ROSA HCP Cluster

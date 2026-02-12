@@ -377,3 +377,14 @@ variable "additional_secrets" {
   default     = null
   nullable    = true
 }
+
+#------------------------------------------------------------------------------
+# Debug / Timing
+#------------------------------------------------------------------------------
+
+variable "enable_timing" {
+  description = "Enable cluster creation timing capture. When enabled, timing information will be available in outputs."
+  type        = bool
+  default     = false
+  nullable    = false
+}

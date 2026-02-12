@@ -27,6 +27,10 @@ terraform {
       source  = "scottwinkler/shell"
       version = ">= 1.7.10"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.9.0"
+    }
   }
 }
 
