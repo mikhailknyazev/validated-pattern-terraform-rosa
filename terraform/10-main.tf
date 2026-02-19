@@ -38,9 +38,42 @@ module "network_private" {
   persists_through_sleep_network = var.persists_through_sleep_network
 }
 
-# Create a local to reference the active network module
+# Data sources for BYO VPC (network_type = "existing") - look up subnets to derive AZs and CIDRs
+data "aws_subnet" "existing_private" {
+  count = var.network_type == "existing" && var.existing_private_subnet_ids != null ? length(var.existing_private_subnet_ids) : 0
+  id    = var.existing_private_subnet_ids[count.index]
+}
+
+data "aws_subnet" "existing_public" {
+  count = var.network_type == "existing" ? length(coalesce(var.existing_public_subnet_ids, [])) : 0
+  id    = coalesce(var.existing_public_subnet_ids, [])[count.index]
+}
+
+# Create a local to reference the active network (from module or synthetic for BYO VPC)
 locals {
-  network = var.network_type == "public" ? module.network_public[0] : module.network_private[0]
+  # Synthetic network object for BYO VPC (same shape as network module outputs)
+  existing_network = var.network_type == "existing" ? {
+    vpc_id               = var.existing_vpc_id
+    vpc_cidr_block       = var.vpc_cidr
+    private_subnet_ids   = var.existing_private_subnet_ids
+    public_subnet_ids    = coalesce(var.existing_public_subnet_ids, [])
+    private_subnet_azs   = [for s in data.aws_subnet.existing_private : s.availability_zone]
+    private_subnet_cidrs = [for s in data.aws_subnet.existing_private : s.cidr_block]
+  } : null
+
+  network = (
+    var.network_type == "public" ? module.network_public[0] :
+    var.network_type == "existing" ? local.existing_network :
+    module.network_private[0]
+  )
+}
+
+# Validate BYO VPC variables when network_type = "existing"
+check "byo_vpc_required_vars" {
+  assert {
+    condition     = var.network_type != "existing" || (var.existing_vpc_id != null && var.existing_private_subnet_ids != null && length(var.existing_private_subnet_ids) > 0)
+    error_message = "When network_type is 'existing', existing_vpc_id and existing_private_subnet_ids (with at least one subnet) must be provided."
+  }
 }
 
 # Generate random suffix for resource naming (reusable across multiple modules)

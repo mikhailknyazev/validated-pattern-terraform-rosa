@@ -1,5 +1,7 @@
 # Network Existing Module
 
+> **DEPRECATED**: This module is deprecated. Use `network_type = "existing"` in the root Terraform configuration instead. When `network_type = "existing"`, no network module runs—you provide `existing_vpc_id`, `existing_private_subnet_ids`, and `existing_public_subnet_ids` directly. The root module uses data sources to look up subnets and passes them to the cluster. See `clusters/byo-vpc/terraform.tfvars` for an example. This module will be removed in a future release.
+
 This module tags existing VPC subnets with ROSA-required tags. It does not create any VPC resources, making it suitable for scenarios where the VPC is managed by a separate network team.
 
 ## Purpose

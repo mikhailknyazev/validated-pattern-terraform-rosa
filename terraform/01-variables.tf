@@ -5,14 +5,35 @@ variable "cluster_name" {
 }
 
 variable "network_type" {
-  description = "Network topology type: 'public' or 'private'. Zero egress mode (zero_egress) is a separate cluster-level property that can be set independently, though it typically requires 'private' network type for PrivateLink API endpoint."
+  description = "Network topology type: 'public', 'private', or 'existing'. Use 'existing' for BYO VPC (Bring Your Own)—you provide VPC and subnet IDs; no network module runs. Zero egress mode (zero_egress) is a separate cluster-level property that can be set independently, though it typically requires 'private' network type for PrivateLink API endpoint."
   type        = string
   nullable    = false
 
   validation {
-    condition     = contains(["public", "private"], var.network_type)
-    error_message = "network_type must be 'public' or 'private'"
+    condition     = contains(["public", "private", "existing"], var.network_type)
+    error_message = "network_type must be 'public', 'private', or 'existing'"
   }
+}
+
+variable "existing_vpc_id" {
+  description = "ID of an existing VPC to use (required when network_type = 'existing'). The VPC must have DNS support and hostnames enabled. You are responsible for creating the VPC, subnets, VPC endpoints, NAT gateways, and subnet tags before running Terraform."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "existing_private_subnet_ids" {
+  description = "List of existing private subnet IDs for worker nodes (required when network_type = 'existing'). Subnets must be tagged with kubernetes.io/role/internal-elb = \"1\"."
+  type        = list(string)
+  default     = null
+  nullable    = true
+}
+
+variable "existing_public_subnet_ids" {
+  description = "List of existing public subnet IDs for load balancers (optional when network_type = 'existing'). Subnets must be tagged with kubernetes.io/role/elb = \"1\". Leave empty or null for private-only clusters."
+  type        = list(string)
+  default     = null
+  nullable    = true
 }
 
 variable "zero_egress" {

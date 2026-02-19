@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/guides/log-forwarders
 
 ### Added
+- **BYO VPC Support** (`network_type = "existing"`): Deploy clusters into an existing VPC without running any network module
+  - New variables: `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids`
+  - Root module uses data sources to look up subnets and constructs synthetic `local.network` object
+  - No network module invocation—user creates VPC, subnets, VPC endpoints, and NAT gateways before Terraform
+  - Documentation references `rosa create network` (ROSA CLI v1.2.48+) as a quick way to create compliant networking
+  - New example: `clusters/byo-vpc/terraform.tfvars` with prerequisite documentation
+
+### Deprecated
+- **network-existing module**: Deprecated in favor of `network_type = "existing"`. The root module now handles BYO VPC directly via variables and data sources. The module will be removed in a future release.
 - **RHCS API Authentication Options**: Documented two authentication methods for the RHCS provider:
   - **Option 1 (Token):** `RHCS_TOKEN` — offline token from console.redhat.com
   - **Option 2 (Service account):** `RHCS_CLIENT_ID` + `RHCS_CLIENT_SECRET` — Red Hat Hybrid Cloud Console service account

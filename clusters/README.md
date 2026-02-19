@@ -19,11 +19,13 @@ clusters/
 │   └── terraform.tfvars                  # Cluster-specific variables
 ├── egress-zero/                          # Example egress-zero cluster
 │   └── terraform.tfvars                  # Cluster-specific variables
+├── byo-vpc/                              # Example BYO VPC cluster (Bring Your Own network)
+│   └── terraform.tfvars                  # Cluster-specific variables
 ├── egress-zero2/                         # Additional egress-zero cluster (example)
 └── us-east-1-production/                 # Additional cluster (example)
 ```
 
-Each directory under `/clusters/` represents a single cluster. The `public` and `egress-zero` directories are reference examples. You can create additional clusters by creating new directories at the same level.
+Each directory under `/clusters/` represents a single cluster. The `public`, `egress-zero`, and `byo-vpc` directories are reference examples. You can create additional clusters by creating new directories at the same level.
 
 ## Cluster Types
 
@@ -75,9 +77,53 @@ make cluster.us-east-1-production.init
 make cluster.us-east-1-production.apply
 ```
 
+### BYO VPC Clusters (`clusters/byo-vpc/`)
+
+BYO VPC (Bring Your Own) clusters use an existing VPC that you create and manage. No network module runs—you provide VPC and subnet IDs directly. Suitable when a separate network team owns the VPC or you use `rosa create network` to provision networking.
+
+**Characteristics:**
+- `network_type = "existing"` — no Terraform network module
+- You create VPC, subnets, VPC endpoints, NAT gateways, and subnet tags before running Terraform
+- Can use `rosa create network` (ROSA CLI v1.2.48+) to create a compliant VPC via CloudFormation
+- See [access.redhat.com/articles/7096266](https://access.redhat.com/articles/7096266) for `rosa create network` usage
+
+**Prerequisites (create before Terraform):**
+- VPC with DNS support and hostnames enabled
+- Private subnets tagged `kubernetes.io/role/internal-elb = "1"`
+- Public subnets (if applicable) tagged `kubernetes.io/role/elb = "1"`
+- NAT gateway(s) for internet egress (unless zero_egress)
+- VPC endpoints: S3 (gateway), ECR API, ECR DKR, STS, EC2, KMS (minimum)
+- Security group for interface VPC endpoints (inbound from VPC CIDR)
+
+**Usage with `rosa create network`:**
+
+```bash
+# 1. Create network via ROSA CLI (creates CloudFormation stack)
+rosa create network --param Region=us-west-2 --param Name=my-rosa-vpc --param AvailabilityZoneCount=3 --param VpcCidr=10.0.0.0/16
+
+# 2. Extract VPC and subnet IDs from the CloudFormation stack (replace "my-rosa-vpc" with your --param Name)
+export STACK_NAME="my-rosa-vpc"
+aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`VPCId`].OutputValue' --output text
+aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnets`].OutputValue' --output text
+aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnets`].OutputValue' --output text
+
+# 3. Copy example and edit terraform.tfvars with the extracted values
+#    PrivateSubnets and PublicSubnets are comma-separated; convert to HCL list format, e.g.:
+#    existing_private_subnet_ids = ["subnet-xxx", "subnet-yyy", "subnet-zzz"]
+cp clusters/byo-vpc/terraform.tfvars clusters/my-byo-cluster/
+# Edit clusters/my-byo-cluster/terraform.tfvars: set existing_vpc_id, existing_private_subnet_ids, existing_public_subnet_ids
+
+# 4. Initialize and apply
+make cluster.my-byo-cluster.init
+make cluster.my-byo-cluster.plan
+make cluster.my-byo-cluster.apply
+```
+
+**Usage with your own IaC:** Create VPC, subnets (with ROSA tags), VPC endpoints, and NAT gateways, then provide the IDs in `terraform.tfvars` as above.
+
 ## Creating a New Cluster
 
-1. **Choose a cluster type**: `public` or `egress-zero`
+1. **Choose a cluster type**: `public`, `egress-zero`, or `byo-vpc`
 
 2. **Create cluster directory**:
    ```bash
@@ -90,11 +136,13 @@ make cluster.us-east-1-production.apply
    cp clusters/<type>/terraform.tfvars clusters/<cluster-name>/
    ```
    Example: `cp clusters/egress-zero/terraform.tfvars clusters/egress-zero2/`
+   For BYO VPC: `cp clusters/byo-vpc/terraform.tfvars clusters/my-byo-cluster/`
 
 4. **Update `terraform.tfvars`**:
    - Set `cluster_name` (uncomment and set value)
-   - Set `network_type` to `public` or `private`
+   - Set `network_type` to `public`, `private`, or `existing` (for BYO VPC)
    - For egress-zero clusters: set `zero_egress = true` (with `network_type = "private"`)
+   - For BYO VPC: set `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids`
    - Set `region`, `vpc_cidr`, and other variables
    - Configure production variables if needed (KMS, version pinning, etc.)
 
@@ -107,19 +155,16 @@ make cluster.us-east-1-production.apply
 
 ## Key Differences Between Cluster Types
 
-| Feature | Public | Private | Egress-Zero |
-|---------|--------|---------|-------------|
-| network_type | `public` | `private` | `private` |
-| zero_egress | `false` | `false` | `true` |
-| API Endpoint | Public | Private (PrivateLink) | Private (PrivateLink) |
-| Internet Egress | Yes (NAT Gateway) | Yes (NAT Gateway) | No (VPC endpoints only) |
-| Subnets | Public + Private | Private only | Private only |
-| Security Groups | Standard | Standard | Strict egress control |
-| VPC Flow Logs | Optional | Optional | Recommended |
-| Encryption | Optional | Optional | Recommended (KMS) |
-| FIPS | Optional | Optional | Optional |
-| VPN Tunnel Required | No | No | Yes (for API access) |
-| Use Case | Development/Testing | Production (private API) | Production (high security) |
+| Feature | Public | Private | Egress-Zero | BYO VPC |
+|---------|--------|---------|-------------|---------|
+| network_type | `public` | `private` | `private` | `existing` |
+| zero_egress | `false` | `false` | `true` | configurable |
+| API Endpoint | Public | Private (PrivateLink) | Private (PrivateLink) | configurable |
+| Internet Egress | Yes (NAT Gateway) | Yes (NAT Gateway) | No (VPC endpoints only) | user-managed |
+| Network Creation | Terraform module | Terraform module | Terraform module | User (no module) |
+| Subnets | Public + Private | Private only | Private only | User-provided |
+| VPN Tunnel Required | No | No | Yes | No (unless private) |
+| Use Case | Development/Testing | Production (private API) | Production (high security) | Existing network / multi-team |
 
 ## Configuration Files
 
@@ -127,8 +172,9 @@ make cluster.us-east-1-production.apply
 
 Contains cluster-specific variables:
 - `cluster_name`: Name of the cluster (must be set)
-- `network_type`: Network topology type (`public` or `private`)
+- `network_type`: Network topology type (`public`, `private`, or `existing` for BYO VPC)
 - `zero_egress`: Enable zero egress mode (no internet egress, only VPC endpoints). Set to `true` with `network_type="private"` for egress-zero clusters. Matches ROSA API property name.
+- `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids`: Required when `network_type = "existing"` (BYO VPC)
 - `region`: AWS region
 - `vpc_cidr`: VPC CIDR block
 - `multi_az`: Multi-AZ deployment (true/false)

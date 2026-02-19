@@ -19,20 +19,22 @@ rosa-hcp-infrastructure/
 │   └── infrastructure/         # Infrastructure modules
 │       ├── network-public/     # Public VPC with NAT Gateways
 │       ├── network-private/     # Private VPC (PrivateLink API, supports egress-zero mode)
-│       ├── network-existing/    # Use existing VPC
+│       ├── network-existing/    # DEPRECATED - use network_type="existing" instead
 │       ├── iam/                # IAM & OIDC module
 │       ├── cluster/            # ROSA HCP Cluster module (includes identity provider, storage, GitOps bootstrap)
 │       └── bastion/            # Bastion host for private cluster access
 ├── terraform/                  # Unified Terraform configuration (shared across clusters)
 │   ├── 00-providers.tf
 │   ├── 01-variables.tf
-│   ├── 10-main.tf             # Conditionally uses network-public or network-private
+│   ├── 10-main.tf             # Conditionally uses network-public, network-private, or BYO VPC (existing)
 │   └── 90-outputs.tf
 └── clusters/
     ├── public/                 # Example public cluster (reference)
     │   └── terraform.tfvars   # Cluster-specific variables (network_type="public")
-    └── egress-zero/            # Example egress-zero cluster (reference)
-        └── terraform.tfvars   # Cluster-specific variables (network_type="private", zero_egress=true)
+    ├── egress-zero/            # Example egress-zero cluster (reference)
+    │   └── terraform.tfvars   # Cluster-specific variables (network_type="private", zero_egress=true)
+    └── byo-vpc/               # Example BYO VPC cluster (reference)
+        └── terraform.tfvars   # Cluster-specific variables (network_type="existing")
 ```
 
 ---
@@ -161,6 +163,31 @@ module "network" {
 ```
 
 **Note**: The standalone `network-egress-zero` module remains for backward compatibility but is deprecated. New deployments should use the consolidated `network-private` module.
+
+---
+
+### 2.4 BYO VPC (network_type = "existing")
+
+**Path**: Root module `terraform/10-main.tf` — **no network module runs**
+
+When `network_type = "existing"`, the root module skips all network modules. Instead, it uses `data` sources to look up the user-provided VPC and subnet IDs, then constructs a synthetic `local.network` object with the same shape as network module outputs. The user is responsible for creating the VPC, subnets, VPC endpoints, NAT gateways, route tables, and subnet tags **before** running Terraform.
+
+**Variables** (required when `network_type = "existing"`):
+- `existing_vpc_id` — ID of the existing VPC
+- `existing_private_subnet_ids` — List of private subnet IDs (at least one)
+- `existing_public_subnet_ids` — List of public subnet IDs (optional, for load balancers)
+
+**Prerequisites** (user must create before Terraform):
+- VPC with DNS support and hostnames enabled
+- Private subnets tagged `kubernetes.io/role/internal-elb = "1"`
+- Public subnets (if applicable) tagged `kubernetes.io/role/elb = "1"`
+- NAT gateway(s) for internet egress (unless zero_egress)
+- VPC endpoints: S3 (gateway), ECR API, ECR DKR, STS, EC2, KMS (minimum)
+- Security group for interface VPC endpoints (inbound from VPC CIDR)
+
+**Quick start**: `rosa create network` (ROSA CLI v1.2.48+) creates a compliant VPC via CloudFormation. See [access.redhat.com/articles/7096266](https://access.redhat.com/articles/7096266).
+
+**Note**: The `network-existing` module is **deprecated**. Use `network_type = "existing"` instead; it requires no network module and only documents what the user must pre-provision.
 
 ---
 
@@ -336,7 +363,7 @@ module "network_private" {
 
 locals {
   is_egress_zero = var.network_type == "private" && var.zero_egress
-  network = var.network_type == "public" ? module.network_public[0] : module.network_private[0]
+  network = var.network_type == "public" ? module.network_public[0] : (var.network_type == "existing" ? local.existing_network : module.network_private[0])
 }
 ```
 
