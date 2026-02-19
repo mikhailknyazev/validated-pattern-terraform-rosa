@@ -316,19 +316,135 @@ variable "api_endpoint_allowed_cidrs" {
 }
 
 variable "enable_audit_logging" {
-  description = "Enable CloudWatch audit log forwarding for the ROSA HCP cluster. When enabled, configures the cluster to forward audit logs to CloudWatch using the IAM role ARN provided via cloudwatch_audit_logging_role_arn variable (from IAM module)."
+  description = "[DEPRECATED] Enable CloudWatch audit log forwarding for the ROSA HCP cluster (legacy implementation). Use enable_control_plane_log_forwarding instead. When enabled, configures the cluster to forward audit logs to CloudWatch using the IAM role ARN provided via cloudwatch_audit_logging_role_arn variable (from IAM module)."
   type        = bool
   default     = true
   nullable    = false
 }
 
 variable "cloudwatch_audit_logging_role_arn" {
-  description = "ARN of the CloudWatch audit logging IAM role (from IAM module output). Required when enable_audit_logging is true."
+  description = "[DEPRECATED] ARN of the CloudWatch audit logging IAM role (from IAM module output). Required when enable_audit_logging is true. Use control_plane_log_forwarding_role_arn instead."
   type        = string
   default     = null
   nullable    = true
 }
 
+# Control Plane Log Forwarding (new ROSA managed log forwarder)
+variable "enable_control_plane_log_forwarding" {
+  description = "Enable control plane log forwarding using ROSA's managed log forwarder. Supports forwarding multiple log groups (API, Authentication, Controller Manager, Scheduler, Other) to CloudWatch and/or S3. Replaces legacy audit logging."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "control_plane_log_forwarding_role_arn" {
+  description = "ARN of the control plane log forwarding IAM role (from IAM module output). Required when enable_control_plane_log_forwarding is true."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "control_plane_log_cloudwatch_groups" {
+  description = "List of log groups to forward to CloudWatch. Valid values: api, authentication, controller manager, scheduler (case-insensitive). Only used when control_plane_log_cloudwatch_enabled is true."
+  type        = list(string)
+  default     = ["api", "authentication", "controller manager", "scheduler"]
+  nullable    = false
+
+  validation {
+    condition = alltrue([
+      for group in var.control_plane_log_cloudwatch_groups : contains([
+        "api", "authentication", "controller manager", "scheduler",
+        "API", "Authentication", "Controller Manager", "Scheduler"
+      ], group)
+    ])
+    error_message = "Log groups must be one of: api, authentication, controller manager, scheduler (case-insensitive)."
+  }
+}
+
+variable "control_plane_log_cloudwatch_applications" {
+  description = "Optional list of specific applications to forward to CloudWatch. If empty, forwards all applications for the selected log groups. Only used when control_plane_log_cloudwatch_enabled is true."
+  type        = list(string)
+  default     = ["certified-operators-catalog", "cluster-api", "community-operators-catalog", "etcd", "private-router", "redhat-marketplace-catalog", "redhat-operators-catalog"]
+  nullable    = false
+}
+
+variable "control_plane_log_s3_groups" {
+  description = "List of log groups to forward to S3. Valid values: api, authentication, controller manager, scheduler (case-insensitive). Only used when control_plane_log_s3_enabled is true."
+  type        = list(string)
+  default     = ["api", "authentication", "controller manager", "scheduler"]
+  nullable    = false
+
+  validation {
+    condition = alltrue([
+      for group in var.control_plane_log_s3_groups : contains([
+        "api", "authentication", "controller manager", "scheduler",
+        "API", "Authentication", "Controller Manager", "Scheduler"
+      ], group)
+    ])
+    error_message = "Log groups must be one of: api, authentication, controller manager, scheduler (case-insensitive)."
+  }
+}
+
+variable "control_plane_log_s3_applications" {
+  description = "Optional list of specific applications to forward to S3. If empty, forwards all applications for the selected log groups. Only used when control_plane_log_s3_enabled is true."
+  type        = list(string)
+  default     = ["certified-operators-catalog", "cluster-api", "community-operators-catalog", "etcd", "private-router", "redhat-marketplace-catalog", "redhat-operators-catalog"]
+  nullable    = false
+}
+
+variable "control_plane_log_cloudwatch_enabled" {
+  description = "Enable CloudWatch destination for control plane log forwarding. Default disabled for cost; S3 is more cost-effective."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "control_plane_log_cloudwatch_log_group_name" {
+  description = "CloudWatch log group name for control plane logs. If null, uses default pattern: <cluster_name>-control-plane-logs. Must match the name used in IAM module policy."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "control_plane_log_s3_enabled" {
+  description = "Enable S3 destination for control plane log forwarding. Default enabled as more cost-effective than CloudWatch."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "control_plane_log_s3_bucket_name" {
+  description = "S3 bucket name for control plane logs. If null, auto-generates a unique name using pattern: <cluster_name>-control-plane-logs-<random_suffix>. S3 bucket names must be globally unique."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "control_plane_log_s3_bucket_prefix" {
+  description = "S3 bucket prefix for control plane logs. Optional prefix to organize logs within the bucket."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "control_plane_log_s3_retention_days" {
+  description = "Number of days to retain control plane logs in S3 before automatic deletion. Default 30 days for cost-effectiveness. Set to null to retain indefinitely (no lifecycle rule)."
+  type        = number
+  default     = 30
+  nullable    = true
+
+  validation {
+    condition     = var.control_plane_log_s3_retention_days == null || var.control_plane_log_s3_retention_days >= 1
+    error_message = "Retention days must be at least 1 when set, or null to retain indefinitely."
+  }
+}
+
+variable "resource_suffix" {
+  description = "Random suffix for resource naming (from root module). Ensures consistency across all resources from the same cluster. Used for resources that need globally unique names (e.g., S3 buckets)."
+  type        = string
+  default     = null
+  nullable    = true
+}
 
 variable "enable_termination_protection" {
   description = "Enable cluster termination protection. When enabled, prevents accidental cluster deletion via ROSA CLI. Default: false. Note: Disabling protection requires manual action via OCM console."

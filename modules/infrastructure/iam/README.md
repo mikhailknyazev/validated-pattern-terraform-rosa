@@ -16,7 +16,8 @@ This module creates the IAM roles, OIDC configuration, and KMS keys required for
   - Node Pool Operator
 - **KMS Keys** (EBS, EFS, ETCD encryption)
 - **Storage IAM Resources** (KMS CSI policy, EBS CSI attachment, EFS CSI role/policy)
-- **CloudWatch Audit Logging IAM** (for SIEM audit log forwarding)
+- **Control Plane Log Forwarding IAM** (new ROSA managed log forwarder - for control plane logs to CloudWatch/S3)
+- **CloudWatch Audit Logging IAM** (legacy, deprecated - for SIEM audit log forwarding)
 - **CloudWatch Logging IAM** (for OpenShift Logging Operator)
 - **Cert Manager IAM** (for AWS Private CA integration)
 - **Secrets Manager IAM** (for ArgoCD Vault Plugin)
@@ -39,7 +40,10 @@ module "iam" {
   enable_efs           = true
 
   # IAM feature flags
-  enable_audit_logging        = true
+  enable_control_plane_log_forwarding        = true  # New ROSA managed log forwarder
+  control_plane_log_cloudwatch_enabled       = false  # Default: S3 is more cost-effective
+  control_plane_log_cloudwatch_log_group_name = null  # Optional: uses default pattern if null
+  enable_audit_logging        = false  # Legacy, deprecated - use control_plane_log_forwarding instead
   enable_cloudwatch_logging   = true
   enable_cert_manager_iam     = true
   enable_secrets_manager_iam  = true
@@ -79,7 +83,10 @@ module "iam" {
 | enable_efs | Enable EFS file system (required for EFS CSI driver IAM role) | `bool` | `false` | no |
 | etcd_encryption | Enable etcd encryption (requires etcd KMS key) | `bool` | `false` | no |
 | kms_key_deletion_window | KMS key deletion window in days | `number` | `10` | no |
-| enable_audit_logging | Enable CloudWatch audit logging IAM resources | `bool` | `false` | no |
+| enable_control_plane_log_forwarding | Enable control plane log forwarding IAM resources (new ROSA managed log forwarder). Replaces legacy audit logging | `bool` | `false` | no |
+| control_plane_log_cloudwatch_enabled | Enable CloudWatch destination for control plane log forwarding. Default disabled for cost; S3 is more cost-effective | `bool` | `false` | no |
+| control_plane_log_cloudwatch_log_group_name | CloudWatch log group name. If null, uses default pattern: ${cluster_name}-control-plane-logs. Must match name used in cluster module | `string` | `null` | no |
+| enable_audit_logging | [DEPRECATED] Enable CloudWatch audit logging IAM resources (legacy implementation). Use enable_control_plane_log_forwarding instead | `bool` | `false` | no |
 | enable_cloudwatch_logging | Enable CloudWatch logging IAM resources | `bool` | `false` | no |
 | enable_cert_manager_iam | Enable cert-manager IAM resources | `bool` | `false` | no |
 | enable_secrets_manager_iam | Enable Secrets Manager IAM resources | `bool` | `false` | no |
@@ -104,7 +111,8 @@ module "iam" {
 | efs_kms_key_arn | ARN of the EFS KMS key (null if enable_storage is false) |
 | etcd_kms_key_id | ID of the ETCD KMS key (null if enable_storage is false or etcd_encryption is false) |
 | etcd_kms_key_arn | ARN of the ETCD KMS key (null if enable_storage is false or etcd_encryption is false) |
-| cloudwatch_audit_logging_role_arn | ARN of the CloudWatch audit logging IAM role (null if enable_audit_logging is false) |
+| control_plane_log_forwarding_role_arn | ARN of the control plane log forwarding IAM role (null if enable_control_plane_log_forwarding is false) |
+| cloudwatch_audit_logging_role_arn | [DEPRECATED] ARN of the CloudWatch audit logging IAM role (null if enable_audit_logging is false). Use control_plane_log_forwarding_role_arn instead |
 | cloudwatch_logging_role_arn | ARN of the CloudWatch logging IAM role (null if enable_cloudwatch_logging is false) |
 | secrets_manager_role_arn | ARN of the Secrets Manager IAM role (null if enable_secrets_manager_iam is false) |
 | cert_manager_role_arn | ARN of the cert-manager IAM role (null if enable_cert_manager_iam is false) |
@@ -165,10 +173,11 @@ The module creates IAM resources for CSI drivers:
 
 The module creates IAM roles for CloudWatch logging:
 
-- **CloudWatch Audit Logging**: IAM role for OpenShift audit log exporter (`openshift-config-managed:cloudwatch-audit-exporter`)
-- **CloudWatch Logging**: IAM role for OpenShift Logging Operator (`openshift-logging:logging`)
+- **Control Plane Log Forwarding** (new): IAM role for ROSA managed log forwarder (`CustomerLogDistribution-RH`). Uses STS assume role with ROSA's central log distribution role. Supports forwarding multiple log groups (api, authentication, controller manager, scheduler) to CloudWatch and/or S3. Note: 'Other' group is not supported by ROSA CLI despite documentation.
+- **CloudWatch Audit Logging** (deprecated): IAM role for OpenShift audit log exporter (`openshift-config-managed:cloudwatch-audit-exporter`). Uses OIDC federation. Replaced by control plane log forwarding.
+- **CloudWatch Logging**: IAM role for OpenShift Logging Operator (`openshift-logging:logging`). Uses OIDC federation for application logs.
 
-These are separate roles for different use cases (SIEM audit logs vs. application logs).
+These are separate roles for different use cases (control plane logs vs. application logs).
 
 ## Cert Manager IAM
 

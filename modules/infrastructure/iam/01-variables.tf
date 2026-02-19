@@ -83,7 +83,7 @@ variable "kms_key_deletion_window" {
 
 # IAM feature flags
 variable "enable_audit_logging" {
-  description = "Enable CloudWatch audit logging IAM resources"
+  description = "[DEPRECATED] Enable CloudWatch audit logging IAM resources (legacy implementation). Use enable_control_plane_log_forwarding instead."
   type        = bool
   default     = false
   nullable    = false
@@ -120,6 +120,28 @@ variable "aws_private_ca_arn" {
 variable "additional_secrets" {
   description = "Additional Secrets Manager secret names for IAM policy (optional)"
   type        = list(string)
+  default     = null
+  nullable    = true
+}
+
+# Control Plane Log Forwarding configuration
+variable "enable_control_plane_log_forwarding" {
+  description = "Enable control plane log forwarding IAM resources (new ROSA managed log forwarder). Replaces legacy audit logging."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "control_plane_log_cloudwatch_enabled" {
+  description = "Enable CloudWatch destination for control plane log forwarding. Default disabled for cost; S3 is more cost-effective. Requires control_plane_log_cloudwatch_log_group_name to be set or uses default pattern."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "control_plane_log_cloudwatch_log_group_name" {
+  description = "CloudWatch log group name for control plane logs. If null, uses default pattern: <cluster_name>-control-plane-logs. Must match the name used in cluster module."
+  type        = string
   default     = null
   nullable    = true
 }

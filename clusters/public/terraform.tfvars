@@ -80,13 +80,17 @@ enable_termination_protection = false # Prevent accidental cluster deletion (req
 enable_cloudwatch_logging = true # Enable CloudWatch logging for OpenShift Logging Operator
 
 # Control Plane Log Forwarding (new ROSA managed log forwarder)
-enable_control_plane_log_forwarding         = true                                                         # Enable control plane log forwarding
-control_plane_log_groups                    = ["api", "authentication", "controller manager", "scheduler"] # Forward all supported log groups (case-insensitive, converted to lowercase)
-control_plane_log_cloudwatch_enabled        = true                                                         # Enable CloudWatch destination
-control_plane_log_cloudwatch_log_group_name = null                                                         # Uses default pattern: <cluster_name>-control-plane-logs
-control_plane_log_s3_enabled                = true                                                         # Enable S3 destination
-control_plane_log_s3_bucket_name            = null                                                         # Optional: If null, auto-generates unique name: <cluster_name>-control-plane-logs-<random_suffix>
-control_plane_log_s3_bucket_prefix          = null                                                         # Optional prefix for organizing logs
+enable_control_plane_log_forwarding         = true
+control_plane_log_cloudwatch_groups         = ["api", "authentication", "controller manager", "scheduler"]
+control_plane_log_cloudwatch_applications   = ["certified-operators-catalog", "cluster-api", "community-operators-catalog", "etcd", "private-router", "redhat-marketplace-catalog", "redhat-operators-catalog"]
+control_plane_log_s3_groups                 = ["api", "authentication", "controller manager", "scheduler"]
+control_plane_log_s3_applications           = ["certified-operators-catalog", "cluster-api", "community-operators-catalog", "etcd", "private-router", "redhat-marketplace-catalog", "redhat-operators-catalog"]
+control_plane_log_cloudwatch_enabled        = false
+control_plane_log_cloudwatch_log_group_name = null
+control_plane_log_s3_enabled                = true
+control_plane_log_s3_bucket_name            = null
+control_plane_log_s3_bucket_prefix          = null
+control_plane_log_s3_retention_days         = 30
 
 # Legacy audit logging (deprecated - disable when control plane log forwarding is enabled)
 enable_audit_logging = false # Disable legacy audit logging in favor of new control plane log forwarding

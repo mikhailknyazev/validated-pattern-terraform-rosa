@@ -112,3 +112,10 @@ output "cert_manager_role_arn" {
   value       = length(aws_iam_role.cert_manager) > 0 ? aws_iam_role.cert_manager[0].arn : null
   sensitive   = false
 }
+
+# Control Plane Log Forwarding Outputs
+output "control_plane_log_forwarding_role_arn" {
+  description = "ARN of the control plane log forwarding IAM role (null if enable_control_plane_log_forwarding is false)"
+  value       = length(aws_iam_role.control_plane_log_forwarding) > 0 ? aws_iam_role.control_plane_log_forwarding[0].arn : null
+  sensitive   = false
+}

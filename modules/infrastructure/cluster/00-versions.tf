@@ -7,9 +7,9 @@ terraform {
       version = ">= 6.0"
     }
     rhcs = {
-      # Official registry provider
+      # Official registry provider - 1.7.4 adds rhcs_log_forwarder support
       source  = "terraform-redhat/rhcs"
-      version = "~> 1.7"
+      version = "~> 1.7.4"
     }
     null = {
       source  = "hashicorp/null"
@@ -18,6 +18,10 @@ terraform {
     shell = {
       source  = "scottwinkler/shell"
       version = ">= 1.7.10"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.0"
     }
   }
 }

@@ -1,5 +1,12 @@
-# CloudWatch Audit Log Forwarding IAM Configuration
+# CloudWatch Audit Log Forwarding IAM Configuration (DEPRECATED)
 # Reference: https://access.redhat.com/solutions/7002219
+#
+# ⚠️  DEPRECATED: This legacy audit logging IAM configuration is deprecated.
+# Use the new control plane log forwarding IAM resources instead (22-control-plane-log-forwarding.tf).
+#
+# Migration: Set enable_control_plane_log_forwarding = true and enable_audit_logging = false
+# The new mechanism uses ROSA's managed log forwarder service with STS assume role instead of OIDC federation.
+#
 # This configuration creates an IAM role and policy for CloudWatch audit log forwarding.
 # The role uses OIDC federation to allow the OpenShift audit log exporter service account to assume the role.
 #

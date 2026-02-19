@@ -43,6 +43,24 @@ locals {
   network = var.network_type == "public" ? module.network_public[0] : module.network_private[0]
 }
 
+# Generate random suffix for resource naming (reusable across multiple modules)
+# This ensures consistency - all resources from the same cluster share the same suffix
+# Persists through sleep operation (not gated by persists_through_sleep)
+# Created unconditionally so it's available for any module that needs unique resource names
+resource "random_id" "resource_suffix" {
+  byte_length = 4 # 8 hex characters for uniqueness
+
+  keepers = {
+    cluster_name = var.cluster_name
+  }
+
+  lifecycle {
+    create_before_destroy = false
+    # Persist through sleep - don't destroy when cluster is slept
+    # The random_id will remain stable across cluster lifecycle
+  }
+}
+
 # Additional machine pools - resolve subnet_index to actual subnet IDs
 locals {
   # Resolve subnet_index to actual subnet IDs from network module
@@ -84,6 +102,11 @@ module "iam" {
   enable_secrets_manager_iam = var.enable_secrets_manager_iam
   aws_private_ca_arn         = var.aws_private_ca_arn
   additional_secrets         = var.additional_secrets
+
+  # Control plane log forwarding (new ROSA managed log forwarder)
+  enable_control_plane_log_forwarding         = var.enable_control_plane_log_forwarding
+  control_plane_log_cloudwatch_enabled        = var.control_plane_log_cloudwatch_enabled
+  control_plane_log_cloudwatch_log_group_name = var.control_plane_log_cloudwatch_log_group_name
 
   # Note: cluster_credentials_secret_arn is no longer passed as a variable
   # The IAM module looks up the secret by name (${cluster_name}-credentials) to avoid circular dependency
@@ -134,9 +157,24 @@ module "cluster" {
   enable_efs           = var.enable_efs != null ? var.enable_efs : true
   private_subnet_cidrs = local.network.private_subnet_cidrs
 
-  # CloudWatch audit logging configuration
+  # CloudWatch audit logging configuration (legacy - deprecated)
   enable_audit_logging              = var.enable_audit_logging
   cloudwatch_audit_logging_role_arn = module.iam.cloudwatch_audit_logging_role_arn
+
+  # Control plane log forwarding (new ROSA managed log forwarder)
+  enable_control_plane_log_forwarding         = var.enable_control_plane_log_forwarding
+  control_plane_log_forwarding_role_arn       = module.iam.control_plane_log_forwarding_role_arn
+  control_plane_log_cloudwatch_groups         = var.control_plane_log_cloudwatch_groups
+  control_plane_log_cloudwatch_applications   = var.control_plane_log_cloudwatch_applications
+  control_plane_log_s3_groups                 = var.control_plane_log_s3_groups
+  control_plane_log_s3_applications           = var.control_plane_log_s3_applications
+  control_plane_log_cloudwatch_enabled        = var.control_plane_log_cloudwatch_enabled
+  control_plane_log_cloudwatch_log_group_name = var.control_plane_log_cloudwatch_log_group_name
+  control_plane_log_s3_enabled                = var.control_plane_log_s3_enabled
+  control_plane_log_s3_bucket_name            = var.control_plane_log_s3_bucket_name
+  control_plane_log_s3_bucket_prefix          = var.control_plane_log_s3_bucket_prefix
+  control_plane_log_s3_retention_days         = var.control_plane_log_s3_retention_days
+  resource_suffix                             = random_id.resource_suffix.hex
 
   # GitOps bootstrap configuration
   enable_gitops_bootstrap = var.enable_gitops_bootstrap != null ? var.enable_gitops_bootstrap : false

@@ -10,7 +10,8 @@ This module creates and manages ROSA HCP clusters, machine pools, identity provi
 - Multi-AZ support
 - HTPasswd identity provider for admin user
 - **EFS file system** (storage infrastructure that depends on cluster security groups)
-- CloudWatch audit logging configuration (IAM resources are in IAM module)
+- **Control plane log forwarding** (new ROSA managed log forwarder) - supports multiple log groups to CloudWatch/S3
+- CloudWatch audit logging configuration (legacy, deprecated - IAM resources are in IAM module)
 - Cluster termination protection
 - GitOps bootstrap support
 
@@ -39,9 +40,22 @@ module "cluster" {
   etcd_kms_key_arn = module.iam.etcd_kms_key_arn
   efs_kms_key_arn  = module.iam.efs_kms_key_arn
 
-  # CloudWatch audit logging (IAM role ARN from IAM module)
-  enable_audit_logging              = true
-  cloudwatch_audit_logging_role_arn = module.iam.cloudwatch_audit_logging_role_arn
+  # Control plane log forwarding (new ROSA managed log forwarder)
+  # Separate resources for CloudWatch and S3 allow different log groups and applications per destination
+  enable_control_plane_log_forwarding        = true
+  control_plane_log_forwarding_role_arn      = module.iam.control_plane_log_forwarding_role_arn
+  control_plane_log_cloudwatch_groups         = ["api", "authentication"]  # Log groups for CloudWatch (each destination has its own)
+  control_plane_log_cloudwatch_applications   = []                          # Optional: specific applications for CloudWatch
+  control_plane_log_s3_groups                = ["api"]                     # Log groups for S3 (can differ from CloudWatch)
+  control_plane_log_s3_applications          = []                          # Optional: specific applications for S3
+  control_plane_log_cloudwatch_enabled       = false # Default: S3 is more cost-effective
+  control_plane_log_cloudwatch_log_group_name = null  # Optional: uses default pattern if null
+  control_plane_log_s3_enabled               = true  # Default: more cost-effective than CloudWatch
+  control_plane_log_s3_bucket_name           = null   # Required if S3 enabled
+
+  # CloudWatch audit logging (legacy, deprecated - use control plane log forwarding instead)
+  # enable_audit_logging              = false
+  # cloudwatch_audit_logging_role_arn = module.iam.cloudwatch_audit_logging_role_arn
 
   # EFS storage configuration
   enable_efs           = true
@@ -114,7 +128,18 @@ module "cluster" {
 | private_subnet_cidrs | List of private subnet CIDR blocks (required for EFS security group rules) | `list(string)` | `[]` |
 | private_subnet_ids | List of private subnet IDs (required for EFS mount targets and cluster creation) | `list(string)` | `[]` |
 | public_subnet_ids | List of public subnet IDs (for public clusters, will be concatenated with private_subnet_ids) | `list(string)` | `[]` |
-| cloudwatch_audit_logging_role_arn | ARN of CloudWatch audit logging IAM role (from IAM module output, required when enable_audit_logging is true) | `string` | `null` |
+| control_plane_log_forwarding_role_arn | ARN of control plane log forwarding IAM role (from IAM module output, required when enable_control_plane_log_forwarding is true) | `string` | `null` |
+| control_plane_log_cloudwatch_groups | List of log groups to forward to CloudWatch. Valid values: api, authentication, controller manager, scheduler (case-insensitive) | `list(string)` | `["api"]` |
+| control_plane_log_cloudwatch_applications | Optional list of specific applications to forward to CloudWatch. If empty, forwards all applications for selected log groups | `list(string)` | `[]` |
+| control_plane_log_s3_groups | List of log groups to forward to S3. Valid values: api, authentication, controller manager, scheduler (case-insensitive) | `list(string)` | `["api"]` |
+| control_plane_log_s3_applications | Optional list of specific applications to forward to S3. If empty, forwards all applications for selected log groups | `list(string)` | `[]` |
+| control_plane_log_cloudwatch_enabled | Enable CloudWatch destination for control plane log forwarding. Default disabled for cost; S3 is more cost-effective | `bool` | `false` |
+| control_plane_log_cloudwatch_log_group_name | CloudWatch log group name. If null, uses default pattern: ${cluster_name}-control-plane-logs | `string` | `null` |
+| control_plane_log_s3_enabled | Enable S3 destination for control plane log forwarding. Default enabled as more cost-effective than CloudWatch | `bool` | `true` |
+| control_plane_log_s3_bucket_name | S3 bucket name for control plane logs. Required when control_plane_log_s3_enabled is true | `string` | `null` |
+| control_plane_log_s3_bucket_prefix | S3 bucket prefix for control plane logs. Optional prefix to organize logs within the bucket | `string` | `null` |
+| control_plane_log_s3_retention_days | Days to retain control plane logs in S3 before automatic deletion. Set to null to retain indefinitely | `number` | `30` |
+| cloudwatch_audit_logging_role_arn | [DEPRECATED] ARN of CloudWatch audit logging IAM role (from IAM module output, required when enable_audit_logging is true). Use control_plane_log_forwarding_role_arn instead | `string` | `null` |
 | aws_private_ca_arn | AWS Private CA ARN for certificate management (for GitOps bootstrap, from IAM module) | `string` | `null` |
 | cert_manager_role_arn | ARN of cert-manager IAM role (from IAM module output, for GitOps bootstrap) | `string` | `null` |
 | service_cidr | CIDR block for services | `string` | `"172.30.0.0/16"` |
@@ -123,7 +148,8 @@ module "cluster" {
 | channel_group | Channel group for OpenShift version | `string` | `"stable"` |
 | openshift_version | OpenShift version to pin. If not provided, automatically uses latest installable version | `string` | `null` |
 | wait_for_std_compute_nodes_complete | Wait for standard compute nodes to complete before considering cluster creation successful. Set to false if nodes may take longer (e.g., egress-zero clusters) | `bool` | `true` |
-| enable_audit_logging | Enable CloudWatch audit log forwarding. When enabled, configures cluster to forward audit logs to CloudWatch using IAM role ARN from IAM module | `bool` | `true` |
+| enable_control_plane_log_forwarding | Enable control plane log forwarding using ROSA's managed log forwarder. Supports forwarding multiple log groups to CloudWatch and/or S3. Replaces legacy audit logging | `bool` | `false` |
+| enable_audit_logging | [DEPRECATED] Enable CloudWatch audit log forwarding (legacy implementation). Use enable_control_plane_log_forwarding instead | `bool` | `true` |
 | enable_termination_protection | Enable cluster termination protection. When enabled, prevents accidental cluster deletion via ROSA CLI. Note: Disabling protection requires manual action via OCM console | `bool` | `false` |
 | api_endpoint_allowed_cidrs | Optional list of IPv4 CIDR blocks allowed to access the ROSA HCP API endpoint. By default, the VPC endpoint security group only allows access from within the VPC. Useful for VPN ranges, bastion hosts, or other VPCs | `list(string)` | `[]` |
 | enable_persistent_dns_domain | Enable persistent DNS domain registration. When true, creates rhcs_dns_domain resource that persists between cluster creations (not gated by persists_through_sleep). When false, ROSA uses default DNS domain | `bool` | `false` |
@@ -287,6 +313,10 @@ additional_machine_pools = {
 - **EC2 Metadata HTTP Tokens**: Control IMDS access (`"optional"` or `"required"`, default: `"required"`)
 
 **Note**: Additional machine pool names cannot conflict with default pool names (e.g., `"workers"`, `"workers-0"`, `"workers-1"`, etc.). The module validates this automatically.
+
+## Control Plane Log Forwarding (S3)
+
+The S3 bucket for control plane logs uses **AES256 (SSE-S3)** rather than customer-managed KMS. ROSA's central log distribution role writes to the bucket from a different AWS account; using KMS would require granting that cross-account role decrypt access to our key. We avoid that security trade-off—SSE-S3 provides encryption at rest with AWS-managed keys without exposing key access to ROSA's account.
 
 ## EFS Storage
 

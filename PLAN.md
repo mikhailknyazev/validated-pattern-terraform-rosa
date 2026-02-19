@@ -824,7 +824,10 @@ GitOps bootstrap is integrated into the cluster module. After cluster deployment
 - **external-dns**: Deployed via `app-of-apps-infrastructure` chart
 - **Ingress Controllers**: Deployed via Helm charts (see `docs/improvements/ingress.md`)
 - **Identity Providers**: Configured via GitOps (cluster-config repository)
-- **Logging**: CloudWatch logging IAM roles created in Terraform, ClusterLogForwarder deployed via GitOps
+- **Logging**:
+  - **Control Plane Log Forwarding** (new): ROSA managed log forwarder for control plane logs (api, authentication, controller manager, scheduler) to CloudWatch/S3 - IAM roles and resources created in Terraform. Note: 'Other' group is not supported by ROSA CLI despite documentation.
+  - **Application Logging**: CloudWatch logging IAM roles created in Terraform, ClusterLogForwarder deployed via GitOps
+  - **Legacy Audit Logging** (deprecated): CloudWatch audit logging IAM roles created in Terraform, configured via ROSA CLI
 - **Monitoring**: Deployed via GitOps (cluster-config repository)
 
 **Pattern**: Terraform creates AWS infrastructure (VPC, IAM roles, Route53 zones), GitOps deploys Kubernetes resources and cluster configuration.

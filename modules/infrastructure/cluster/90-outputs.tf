@@ -238,3 +238,16 @@ output "aws_account_id" {
   value       = data.aws_caller_identity.current.account_id
   sensitive   = false
 }
+
+# Control Plane Log Forwarding Outputs
+output "control_plane_log_cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch log group for control plane logs (null if control_plane_log_cloudwatch_enabled is false)"
+  value       = var.enable_control_plane_log_forwarding && var.control_plane_log_cloudwatch_enabled && length(aws_cloudwatch_log_group.control_plane_logs) > 0 ? aws_cloudwatch_log_group.control_plane_logs[0].name : null
+  sensitive   = false
+}
+
+output "control_plane_log_s3_bucket_name" {
+  description = "Name of the S3 bucket for control plane logs (null if control_plane_log_s3_enabled is false)"
+  value       = var.enable_control_plane_log_forwarding && var.control_plane_log_s3_enabled && length(aws_s3_bucket.control_plane_logs) > 0 ? aws_s3_bucket.control_plane_logs[0].id : null
+  sensitive   = false
+}

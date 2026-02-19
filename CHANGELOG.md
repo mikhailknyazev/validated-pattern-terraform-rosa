@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Control Plane Log Forwarding**: Migrated from ROSA CLI shell workaround to native `rhcs_log_forwarder` Terraform resource
+  - Updated RHCS provider from `~> 1.7` to `~> 1.7.4` (adds `rhcs_log_forwarder` support)
+  - Replaced `null_resource` + `local_file` + `rosa create/edit/delete log-forwarder` with `rhcs_log_forwarder` resource
+  - Removed `local` provider dependency from cluster module (was only used for log forwarder YAML file)
+  - **Separate resources per destination**: Two `rhcs_log_forwarder` resources (CloudWatch and S3) allow different log groups and applications per destination
+  - New variables: `control_plane_log_cloudwatch_groups`, `control_plane_log_cloudwatch_applications`, `control_plane_log_s3_groups`, `control_plane_log_s3_applications` (replaced shared `control_plane_log_groups` and `control_plane_log_applications`)
+  - Configuration now managed declaratively by Terraform; no ROSA CLI or jq required
+  - Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/guides/log-forwarders
+
 ### Added
 - **RHCS API Authentication Options**: Documented two authentication methods for the RHCS provider:
   - **Option 1 (Token):** `RHCS_TOKEN` — offline token from console.redhat.com
@@ -43,6 +53,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Homebrew installation commands for all development tools
   - Updated `docs/CI_CD.md` with macOS instructions
   - Makefile targets detect missing tools and provide macOS installation hints
+- **Control Plane Log Forwarding**: Added new ROSA managed log forwarder for control plane logs:
+  - New `enable_control_plane_log_forwarding` variable (default: `false`) in root, cluster, and IAM modules
+  - Supports forwarding multiple log groups: api, authentication, controller manager, scheduler (case-insensitive input, converted to lowercase)
+  - Note: 'Other' group is not supported by ROSA CLI despite documentation
+  - Supports forwarding to CloudWatch and/or S3 destinations
+  - Uses ROSA's managed log forwarder service (doesn't contend for cluster resources)
+  - IAM role uses STS assume role with ROSA's central log distribution role (not OIDC federation)
+  - IAM role name must include "CustomerLogDistribution" (e.g., `${cluster_name}-CustomerLogDistribution-RH`)
+  - CloudWatch log group and S3 bucket created in cluster module (cluster-specific infrastructure)
+  - Configuration via `rosa create log-forwarder` with YAML config file
+  - New outputs: `control_plane_log_forwarding_role_arn`, `control_plane_log_cloudwatch_log_group_name`, `control_plane_log_s3_bucket_name`
+  - Reference: https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/security_and_compliance/rosa-forwarding-control-plane-logs
+  - Files: `modules/infrastructure/iam/22-control-plane-log-forwarding.tf`, `modules/infrastructure/cluster/21-control-plane-log-forwarding.tf`, `modules/infrastructure/cluster/22-control-plane-log-forwarding-resources.tf`
 
 ### Changed
 - **BREAKING**: Renamed `enable_strict_egress` variable to `zero_egress` throughout the codebase
@@ -111,6 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configuration file: `modules/infrastructure/cluster/20-audit-logging.tf`
   - Reference implementation: `./reference/rosa-hcp-dedicated-vpc/terraform/4.logging.tf`
   - Note: Cluster configuration via OCM API or rosa CLI may be required depending on provider version
+  - **DEPRECATED**: Use `enable_control_plane_log_forwarding` instead for the new ROSA managed log forwarder
 - **API Endpoint Security Group Access**: Added optional `api_endpoint_allowed_cidrs` variable to cluster module:
   - Allows specifying additional IPv4 CIDR blocks to access the ROSA HCP API endpoint
   - By default, the VPC endpoint security group only allows access from within the VPC

@@ -25,6 +25,21 @@ locals {
   # AWS account ID (available via data source)
   aws_account_id = data.aws_caller_identity.current.account_id
 
+  # Common resource suffix for consistent naming across resources
+  # Used for resources that need globally unique names (e.g., S3 buckets)
+  # This ensures all resources from the same cluster share the same suffix for consistency
+  # Provided from root module (terraform/10-main.tf) so it can be shared across modules
+  resource_suffix = var.resource_suffix != null ? var.resource_suffix : null
+
+  # S3 bucket name for control plane logs
+  # Use provided name or generate one with cluster name + random suffix
+  # This local is used by both 21-control-plane-log-forwarding.tf and 22-control-plane-log-forwarding-resources.tf
+  s3_bucket_name = var.control_plane_log_s3_enabled ? (
+    var.control_plane_log_s3_bucket_name != null ? var.control_plane_log_s3_bucket_name : (
+      local.resource_suffix != null ? "${lower(var.cluster_name)}-control-plane-logs-${local.resource_suffix}" : null
+    )
+  ) : null
+
   # Determine OpenShift version to use
   # Reference: https://github.com/rh-mobb/terraform-rosa/blob/main/04-cluster.tf
   # If openshift_version is provided, use it; otherwise use the latest installable version
