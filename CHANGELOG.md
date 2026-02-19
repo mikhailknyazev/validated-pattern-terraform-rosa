@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **RHCS API Authentication Options**: Documented two authentication methods for the RHCS provider:
+  - **Option 1 (Token):** `RHCS_TOKEN` — offline token from console.redhat.com
+  - **Option 2 (Service account):** `RHCS_CLIENT_ID` + `RHCS_CLIENT_SECRET` — Red Hat Hybrid Cloud Console service account
+  - Added RHCS Authentication section to README.md and clusters/README.md
+  - **Removed `token` variable** — RHCS provider reads credentials from env vars only (RHCS_TOKEN, RHCS_CLIENT_ID, RHCS_CLIENT_SECRET)
+  - Audit logging provisioner now checks `RHCS_TOKEN` first (before OCM_TOKEN, ROSA_TOKEN)
+  - Added `.rhcs_creds` and `.rhcs_client_creds` to .gitignore
+  - Project does not manage credentials — user responsibility to set before make
 - **GitHub Actions CI/CD Workflows**: Added automated Terraform and shell script validation and quality checks
   - `terraform-pr-checks.yml`: Runs on pull requests to validate Terraform code and shell scripts
   - `terraform-master-checks.yml`: Runs on pushes to main/master branches

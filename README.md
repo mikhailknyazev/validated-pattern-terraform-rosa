@@ -19,15 +19,52 @@ The repository is organized around infrastructure modules:
 
 - Terraform >= 1.5.0
 - AWS CLI configured with appropriate credentials
-- Red Hat Cloud Services (RHCS) token (set via `TF_VAR_token` environment variable)
+- RHCS API authentication (see [RHCS API Authentication](#rhcs-api-authentication) - set credentials before using make)
 - `oc` CLI installed (for cluster access)
 - `sshuttle` installed (for egress-zero cluster access via bastion) - `brew install sshuttle` on macOS
+
+### RHCS API Authentication
+
+Set credentials **before** using any `make` or Terraform commands. This project does not manage RHCS credentials.
+
+**Option 1: Token (offline/refresh token)**
+
+- Get an offline token from https://console.redhat.com/openshift/token/rosa/show
+- Set `RHCS_TOKEN`:
+  ```bash
+  export RHCS_TOKEN="your-offline-token"
+  ```
+- Suitable for local development
+
+**Option 2: Service account (client credentials)**
+
+- Create a Red Hat Hybrid Cloud Console service account (User Management → Service accounts)
+- Add the service account to a User Access group with RBAC roles for ROSA/OCM
+- Set `RHCS_CLIENT_ID` and `RHCS_CLIENT_SECRET`:
+  ```bash
+  export RHCS_CLIENT_ID="your-client-id-uuid"
+  export RHCS_CLIENT_SECRET="your-client-secret"
+  ```
+- Suitable for CI/CD and automation
+
+**Using a credentials file (recommended):**
+```bash
+# .rhcs_creds (add to .gitignore)
+export RHCS_TOKEN="your-token"
+# OR for service account:
+# export RHCS_CLIENT_ID="..."
+# export RHCS_CLIENT_SECRET="..."
+
+source .rhcs_creds
+make cluster.public.plan
+```
 
 ### Deploy a Public Cluster
 
 **1. Set required environment variables:**
 ```bash
-export TF_VAR_token="your-rhcs-token"
+# RHCS authentication (choose one option from above)
+export RHCS_TOKEN="your-rhcs-token"   # or use service account variables
 export TF_VAR_admin_password="your-secure-password"  # Optional, for admin user
 ```
 
@@ -335,8 +372,9 @@ provider "aws" {
 }
 
 provider "rhcs" {
-  token = var.token
+  url = "https://api.openshift.com"
 }
+# RHCS auth: set RHCS_TOKEN or RHCS_CLIENT_ID+RHCS_CLIENT_SECRET before make
 ```
 
 **3. Create `01-variables.tf`:**
@@ -351,13 +389,6 @@ variable "region" {
   description = "AWS region"
   type        = string
   default     = "us-east-1"
-  nullable    = false
-}
-
-variable "token" {
-  description = "RHCS API token"
-  type        = string
-  sensitive   = true
   nullable    = false
 }
 
@@ -416,7 +447,7 @@ module "cluster" {
 ```hcl
 cluster_name = "my-cluster"
 region       = "us-east-1"
-# token should be set via TF_VAR_token environment variable
+# RHCS auth: set RHCS_TOKEN or RHCS_CLIENT_ID+RHCS_CLIENT_SECRET before make
 ```
 
 **6. Use Makefile pattern rules:**
@@ -656,7 +687,7 @@ data "terraform_remote_state" "network" {
 
 ## Security Best Practices
 
-- **Never commit secrets**: Use environment variables (`TF_VAR_token`, `TF_VAR_admin_password`) or AWS Secrets Manager
+- **Never commit secrets**: Use environment variables (`RHCS_TOKEN` or service account vars, `TF_VAR_admin_password`) or AWS Secrets Manager
 - **Least Privilege**: All IAM roles follow least-privilege principles
 - **State Encryption**: Always enable encryption for S3 backends
 - **State Locking**: Use DynamoDB for state locking in production

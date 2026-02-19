@@ -48,18 +48,13 @@ provider "aws" {
 }
 
 # Registry provider for most resources (IAM, OIDC, nested modules, etc.)
+# Authentication: Set credentials before using make. Two options (see README.md):
+#   Option 1 (Token): RHCS_TOKEN - offline token from console.redhat.com
+#   Option 2 (Service account): RHCS_CLIENT_ID + RHCS_CLIENT_SECRET - Red Hat service account
+# This project does not manage credentials - user responsibility.
 provider "rhcs" {
-  # Token can be provided via:
-  # 1. Variable: var.token (set in terraform.tfvars or via TF_VAR_token environment variable)
-  # 2. Environment variable: OCM_TOKEN or ROSA_TOKEN (if var.token is not set)
-  # Reference: https://github.com/rh-mobb/terraform-rosa/blob/main/00-provider.tf
-  # Get token from: https://console.redhat.com/openshift/token/rosa/show
-  token = var.token
-  url   = "https://api.openshift.com"
-  # Optional: Custom token URL and client settings
-  # token_url     = "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
-  # client_id     = "cloud-services"
-  # client_secret = "" # Empty string uses default client secret
+  url = "https://api.openshift.com"
+  # Provider reads from env: RHCS_TOKEN, RHCS_CLIENT_ID, RHCS_CLIENT_SECRET
 }
 
 # Shell provider for bootstrap scripts

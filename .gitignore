@@ -36,6 +36,10 @@ terraform.rc
 .env
 .env.local
 
+# RHCS credentials (user-managed, never commit)
+.rhcs_creds
+.rhcs_client_creds
+
 # IDE files
 .vscode/
 .idea/

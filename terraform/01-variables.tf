@@ -154,21 +154,6 @@ variable "tags_override" {
   nullable    = true
 }
 
-variable "token" {
-  description = <<EOF
-  OCM token used to authenticate against the OpenShift Cluster Manager API.
-  See https://console.redhat.com/openshift/token/rosa/show to access your token.
-
-  Can be provided via:
-  - terraform.tfvars file (not recommended for production)
-  - Environment variable: TF_VAR_token
-  - Environment variable: OCM_TOKEN or ROSA_TOKEN (provider will check these if token is not set)
-  EOF
-  type        = string
-  sensitive   = true
-  nullable    = false
-}
-
 variable "admin_username" {
   description = "Admin username for cluster authentication"
   type        = string

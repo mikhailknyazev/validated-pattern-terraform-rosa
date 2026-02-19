@@ -58,10 +58,11 @@ Terraform plan is **not** included in the default workflows because it requires:
 
 To enable terraform plan in CI/CD:
 1. Uncomment the `terraform-plan` job in the workflow file
-2. Configure GitHub secrets:
+2. Configure GitHub secrets (choose one RHCS auth option):
    - `AWS_ACCESS_KEY_ID`
    - `AWS_SECRET_ACCESS_KEY`
-   - `RHCS_TOKEN`
+   - **Option 1 (Token):** `RHCS_TOKEN`
+   - **Option 2 (Service account):** `RHCS_CLIENT_ID` + `RHCS_CLIENT_SECRET`
    - `TF_STATE_BUCKET` (optional, for remote backend)
    - `TF_STATE_LOCK_TABLE` (optional, for state locking)
 
@@ -277,7 +278,7 @@ infrastructure:
     - apk add --no-cache bash aws-cli jq
     - chmod +x scripts/**/*.sh
   script:
-    - export TF_VAR_token="$RHCS_TOKEN"
+    # RHCS auth: set RHCS_TOKEN (Option 1) or RHCS_CLIENT_ID+RHCS_CLIENT_SECRET (Option 2) as GitLab CI variables
     - ./scripts/cluster/init-infrastructure.sh $CLUSTER_NAME
     - ./scripts/cluster/plan-infrastructure.sh $CLUSTER_NAME
     - ./scripts/cluster/apply-infrastructure.sh $CLUSTER_NAME
@@ -358,9 +359,15 @@ pipeline {
 
 ## Environment Variables
 
-### Required Variables
+### RHCS Authentication (Required - choose one)
 
-- `TF_VAR_token`: Red Hat Cloud Services (RHCS) token
+- **Option 1 (Token):** `RHCS_TOKEN` — offline token from console.redhat.com
+- **Option 2 (Service account):** `RHCS_CLIENT_ID` + `RHCS_CLIENT_SECRET` — Red Hat Hybrid Cloud Console service account
+
+Set these before running scripts. This project does not manage credentials.
+
+### Other Variables
+
 - `TF_VAR_admin_password`: Admin password (optional, can be generated)
 
 ### Backend Configuration
@@ -456,7 +463,7 @@ Scripts use `set -euo pipefail` for strict error handling. Ensure your pipeline:
 
 Store sensitive values in CI/CD secrets:
 
-- `TF_VAR_token`: RHCS token
+- **RHCS auth** (choose one): `RHCS_TOKEN` OR (`RHCS_CLIENT_ID` + `RHCS_CLIENT_SECRET`)
 - `TF_VAR_admin_password`: Admin password
 - AWS credentials: Access key ID and secret access key
 

@@ -217,7 +217,7 @@ jobs:
   #     - name: Terraform Plan (example cluster)
   #       working-directory: terraform
   #       env:
-  #         TF_VAR_token: ${{ secrets.RHCS_TOKEN }}
+  #         RHCS_TOKEN: ${{ secrets.RHCS_TOKEN }}  # or RHCS_CLIENT_ID + RHCS_CLIENT_SECRET for service account
   #       run: |
   #         # Note: This requires a valid cluster configuration
   #         # You may want to create a test cluster configuration for CI/CD

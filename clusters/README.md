@@ -2,6 +2,15 @@
 
 This directory contains cluster-specific Terraform configurations for ROSA HCP clusters. Each directory under `/clusters/` represents a single cluster. The `public` and `egress-zero` directories are reference examples.
 
+## RHCS API Authentication
+
+Set RHCS credentials **before** using any `make` or Terraform commands. This project does not manage credentials.
+
+- **Option 1 (Token):** `export RHCS_TOKEN="your-offline-token"` — Get token from https://console.redhat.com/openshift/token/rosa/show
+- **Option 2 (Service account):** `export RHCS_CLIENT_ID="..."` and `export RHCS_CLIENT_SECRET="..."` — Create in Red Hat Hybrid Cloud Console → User Management → Service accounts
+
+See [README.md](../README.md#rhcs-api-authentication) for full documentation.
+
 ## Directory Structure
 
 ```
