@@ -542,14 +542,14 @@ variable "acm_mode" {
 variable "helm_repo_name" {
   description = "Name for the Helm repository"
   type        = string
-  default     = "helm_repo_new"
+  default     = "vp-rosa-gitops"
   nullable    = false
 }
 
 variable "helm_repo_url" {
   description = "URL for the Helm repository"
   type        = string
-  default     = "https://rosa-hcp-dedicated-vpc.github.io/helm-repository/"
+  default     = "https://rh-mobb.github.io/validated-pattern-helm-charts/"
   nullable    = false
 }
 
@@ -563,7 +563,7 @@ variable "helm_chart" {
 variable "helm_chart_version" {
   description = "Helm chart version for cluster bootstrap"
   type        = string
-  default     = "0.5.4"
+  default     = "0.5.7"
   nullable    = false
 }
 

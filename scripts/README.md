@@ -94,10 +94,12 @@ Shared functions used across all scripts:
 **Usage:**
 ```bash
 # Via Makefile (recommended)
-make cluster.<cluster-name>.bootstrap-cluster
+make cluster.<cluster-name>.bootstrap
 
-# Directly (with environment variables from Terraform)
-eval $(terraform output -raw gitops_bootstrap_command)
+# Directly (from terraform/): write values, export env vars, run script
+# terraform output -raw gitops_bootstrap_hub_values > clusters/<name>/cluster-bootstrap-values.yaml
+# eval $(terraform output -raw gitops_bootstrap_env_exports)
+# export BOOTSTRAP_VALUES_FILE=$PWD/clusters/<name>/cluster-bootstrap-values.yaml
 $(terraform output -raw gitops_bootstrap_script_path)
 ```
 
@@ -108,7 +110,7 @@ DEBUG=true make cluster.<cluster-name>.bootstrap
 ```
 
 **Output:**
-- Creates values file at `scratch/cluster-bootstrap-values-<CLUSTER_NAME>.yaml` for inspection
+- Creates values file at `clusters/<cluster-dir>/cluster-bootstrap-values.yaml` for inspection
 - Installs OpenShift GitOps operator via Helm charts
 - Configures ArgoCD instances (`cluster-gitops` and `application-gitops`)
 

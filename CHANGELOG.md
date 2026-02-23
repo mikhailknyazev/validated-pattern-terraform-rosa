@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **ArgoCD application-gitops invalid initialRepositories**: application-gitops subchart passed `null` to ArgoCD CR `spec.initialRepositories` when not set, causing validation error. The API expects a string (YAML/JSON), not array. Set `application-gitops.argocd.initialRepositories: "[]"` in hub-values template.
+- **GitOps operator not installing**: cluster-bootstrap Helm chart subscriptions default to `csv: null`, which produces invalid `spec.startingCSV: null` in the Subscription (Kubernetes rejects null). Added subscription override in values file (`subscriptions[0].csv`) so the GitOps operator installs correctly. Using values file merge (not `--set`) preserves name, channel, source, and sourceNamespace from chart defaults.
+
 ### Changed
+- **GitOps bootstrap templates**: Moved `hub-values.yaml.tftpl` and `spoke-values.yaml.tftpl` from `scripts/cluster/templates/` to `modules/infrastructure/cluster/templates/` for better module encapsulation
+- **GitOps bootstrap values generation**: Moved Helm values generation from bootstrap script to Terraform
+  - Terraform generates values via `templatefile()` and exposes `gitops_bootstrap_hub_values` and `gitops_bootstrap_spoke_values`
+  - **Makefile owns orchestration**: writes values to `clusters/<cluster-dir>/cluster-bootstrap-values.yaml`, sets BOOTSTRAP_VALUES_FILE, evals `gitops_bootstrap_env_exports`, runs script
+  - Removed `gitops_bootstrap_command`; replaced `gitops_bootstrap_env_vars` with `gitops_bootstrap_env_exports` (shell export statements)
+  - Added `gitops_bootstrap_acm_mode` for Makefile to select hub vs spoke values
+  - Bootstrap script requires `BOOTSTRAP_VALUES_FILE` (set by Makefile)
+  - Cluster domain derived from cluster API URL in Terraform (`cluster_domain` output)
+  - Reduced env vars: GIT_REPO_URL, AWS_ACCOUNT_ID, ECR_ACCOUNT, EBS_KMS_KEY_ARN, EFS_FILE_SYSTEM_ID, GITOPS_CSV, GIT_PATH (and AWS Private CA vars) now in values file
+  - Templates in `modules/infrastructure/cluster/templates/` (hub-values.yaml.tftpl, spoke-values.yaml.tftpl)
+- **Default Helm repository**: Updated default Helm repository URL from `rosa-hcp-dedicated-vpc.github.io/helm-repository` to `rh-mobb.github.io/validated-pattern-helm-charts`
+  - Updated in `modules/infrastructure/cluster/01-variables.tf`, `scripts/cluster/bootstrap-gitops.sh`, and `scripts/cluster/README-bootstrap-gitops.md`
+  - Can still be overridden per-cluster via `helm_repo_url` in terraform.tfvars or `HELM_REPO_URL` environment variable
 - **Control Plane Log Forwarding**: Migrated from ROSA CLI shell workaround to native `rhcs_log_forwarder` Terraform resource
   - Updated RHCS provider from `~> 1.7` to `~> 1.7.4` (adds `rhcs_log_forwarder` support)
   - Replaced `null_resource` + `local_file` + `rosa create/edit/delete log-forwarder` with `rhcs_log_forwarder` resource

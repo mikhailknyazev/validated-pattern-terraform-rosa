@@ -60,5 +60,8 @@ terraform/modules/
 .DS_Store
 Thumbs.db
 
-# Scratch directory for temporary files (values files, etc.)
+# Scratch directory for temporary files
 scratch/
+
+# Generated bootstrap values (Terraform output, same dir as tfvars)
+clusters/*/cluster-bootstrap-values.yaml

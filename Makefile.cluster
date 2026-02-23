@@ -113,8 +113,14 @@ bootstrap: check-cluster ensure-tunnel
 			echo "$(YELLOW)Error: GitOps bootstrap script path not found. Run terraform apply first.$(NC)"; \
 			exit 1; \
 		fi && \
+		ACM_MODE=$$(terraform output -no-color -raw gitops_bootstrap_acm_mode 2>/dev/null | tr -d '\n\r') && \
+		VALUES_OUTPUT=$$([ "$$ACM_MODE" = "spoke" ] && echo "gitops_bootstrap_spoke_values" || echo "gitops_bootstrap_hub_values") && \
+		echo "$(BLUE)Writing Helm values to clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml...$(NC)" && \
+		mkdir -p "../clusters/$(CLUSTER_NAME)" && \
+		terraform output -no-color -raw "$$VALUES_OUTPUT" > "../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
+		export BOOTSTRAP_VALUES_FILE="$$PWD/../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
 		echo "$(BLUE)Exporting environment variables from Terraform outputs...$(NC)" && \
-		eval $$(terraform output -no-color -raw gitops_bootstrap_command 2>/dev/null) && \
+		eval $$(terraform output -no-color -raw gitops_bootstrap_env_exports 2>/dev/null) && \
 		echo "$(BLUE)Running GitOps bootstrap script: $$SCRIPT_PATH$(NC)" && \
 		bash "$$SCRIPT_PATH" || \
 		(echo "$(YELLOW)GitOps bootstrap failed. Check the output above for details.$(NC)" && exit 1)

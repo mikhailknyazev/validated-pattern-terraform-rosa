@@ -177,28 +177,39 @@ output "gitops_bootstrap_enabled" {
   sensitive   = false
 }
 
-output "gitops_bootstrap_env_vars" {
-  description = "Environment variables for running the GitOps bootstrap script manually"
-  value       = module.cluster.gitops_bootstrap_env_vars
+output "gitops_bootstrap_acm_mode" {
+  description = "ACM mode for GitOps bootstrap (hub, spoke, or noacm)"
+  value       = module.cluster.gitops_bootstrap_acm_mode
   sensitive   = false
 }
 
-output "gitops_bootstrap_command" {
-  description = <<EOF
-  Shell commands to export environment variables for the GitOps bootstrap script.
-
-  Usage:
-    # Export variables and run script
-    eval $(terraform output -raw gitops_bootstrap_command)
-    $(terraform output -raw gitops_bootstrap_script_path)
-  EOF
-  value       = module.cluster.gitops_bootstrap_command
+output "gitops_bootstrap_env_exports" {
+  description = "Shell export statements for GitOps bootstrap script env vars"
+  value       = module.cluster.gitops_bootstrap_env_exports
   sensitive   = false
 }
 
 output "gitops_bootstrap_script_path" {
   description = "Path to the GitOps bootstrap script"
   value       = module.cluster.gitops_bootstrap_script_path
+  sensitive   = false
+}
+
+output "cluster_domain" {
+  description = "Cluster domain derived from API URL for GitOps bootstrap"
+  value       = module.cluster.cluster_domain
+  sensitive   = false
+}
+
+output "gitops_bootstrap_hub_values" {
+  description = "Helm values YAML for cluster-bootstrap chart (hub/standalone mode)"
+  value       = module.cluster.gitops_bootstrap_hub_values
+  sensitive   = false
+}
+
+output "gitops_bootstrap_spoke_values" {
+  description = "Helm values YAML for cluster-bootstrap-acm-spoke chart"
+  value       = module.cluster.gitops_bootstrap_spoke_values
   sensitive   = false
 }
 

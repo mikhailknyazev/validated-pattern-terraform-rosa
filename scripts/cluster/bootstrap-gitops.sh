@@ -19,7 +19,8 @@ if [[ "${DEBUG:-}" == "true" ]] || [[ "${DEBUG:-}" == "1" ]]; then
 	set -x
 fi
 
-# Get script directory for relative paths
+# Get script directory for relative paths (used for debugging/output)
+# shellcheck disable=SC2034
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Global variable to store helm command for output
@@ -73,6 +74,7 @@ validate_env_vars() {
 		"CLUSTER_NAME"
 		"CREDENTIALS_SECRET"
 		"AWS_REGION"
+		"BOOTSTRAP_VALUES_FILE"
 	)
 
 	local missing_vars=()
@@ -84,6 +86,11 @@ validate_env_vars() {
 
 	if [[ ${#missing_vars[@]} -gt 0 ]]; then
 		bad_exit "Missing required environment variables: ${missing_vars[*]}"
+	fi
+
+	# Validate values file exists
+	if [[ ! -f "${BOOTSTRAP_VALUES_FILE}" ]]; then
+		bad_exit "BOOTSTRAP_VALUES_FILE does not exist: ${BOOTSTRAP_VALUES_FILE}. Write values from Terraform: terraform output -raw gitops_bootstrap_hub_values > clusters/<cluster-dir>/cluster-bootstrap-values.yaml (or gitops_bootstrap_spoke_values for spoke), then export BOOTSTRAP_VALUES_FILE."
 	fi
 
 	# Validate ACM mode if specified
@@ -255,8 +262,8 @@ check_helm_release() {
 
 # --- Setup Helm repository ---
 setup_helm_repo() {
-	local repo_name="${HELM_REPO_NAME:-helm_repo_new}"
-	local repo_url="${HELM_REPO_URL:-https://rosa-hcp-dedicated-vpc.github.io/helm-repository/}"
+	local repo_name="${HELM_REPO_NAME:-vp-rosa-gitops}"
+	local repo_url="${HELM_REPO_URL:-https://rh-mobb.github.io/validated-pattern-helm-charts/}"
 
 	echo "Setting up Helm repository: ${repo_name}"
 
@@ -282,120 +289,19 @@ install_gitops_hub() {
 	local chart_name="${HELM_CHART:-cluster-bootstrap}"
 	local chart_version="${HELM_CHART_VERSION:-0.5.4}"
 	local namespace="${HELM_NAMESPACE:-openshift-operators}"
-	local gitops_csv="${GITOPS_CSV:-openshift-gitops-operator.v1.16.0-0.1746014725.p}"
 
 	echo "=== Installing GitOps for hub/standalone cluster ==="
 
-	# Ensure CLUSTER_DOMAIN is set (should be set by log_into_cluster, but check just in case)
-	if [[ -z "${CLUSTER_DOMAIN:-}" ]]; then
-		# Extract domain from current cluster context if not set
-		local api_url
-		api_url=$(oc whoami --show-server 2>/dev/null || echo "")
-		if [[ -n "${api_url}" ]]; then
-			CLUSTER_DOMAIN=$(echo "${api_url}" | awk -F'.' '{print $2"."$3"."$4"."$5"."$6}' | awk -F':' '{print $1}')
-			export CLUSTER_DOMAIN
-			echo "Extracted cluster domain from current context: ${CLUSTER_DOMAIN}"
-		else
-			bad_exit "CLUSTER_DOMAIN is not set and cannot be extracted from cluster context"
-		fi
-	fi
-
-	# Create a values file with all our overrides in scratch directory
-	# This avoids issues with trying to override YAML strings using --set flags
-	# Using scratch/ instead of mktemp allows inspection of the file for debugging
-	local scratch_dir="${SCRIPT_DIR}/../../scratch"
-	mkdir -p "${scratch_dir}"
-	local values_file="${scratch_dir}/cluster-bootstrap-values-${CLUSTER_NAME}.yaml"
-
-	# Build the values.yaml content
-	cat >"${values_file}" <<EOF
-clusterName: ${CLUSTER_NAME}
-domain: ${CLUSTER_DOMAIN}
-csv: ${gitops_csv}
-aws_region: ${AWS_REGION}
-EOF
-
-	# Add optional parameters
-	[[ -n "${GIT_PATH:-}" ]] && echo "gitPath: ${GIT_PATH}" >>"${values_file}"
-	[[ -n "${AWS_ACCOUNT_ID:-}" ]] && echo "aws_account: ${AWS_ACCOUNT_ID}" >>"${values_file}"
-	[[ -n "${ECR_ACCOUNT:-}" ]] && echo "ecr_account: ${ECR_ACCOUNT}" >>"${values_file}"
-	[[ -n "${EBS_KMS_KEY_ARN:-}" ]] && echo "aws_kms_key_ebs: ${EBS_KMS_KEY_ARN}" >>"${values_file}"
-	[[ -n "${EFS_FILE_SYSTEM_ID:-}" ]] && echo "fileSystemId: ${EFS_FILE_SYSTEM_ID}" >>"${values_file}"
-
-	# Set Helm repository URL (default if not provided)
-	local helm_repo_url="${HELM_REPO_URL:-https://rosa-hcp-dedicated-vpc.github.io/helm-repository/}"
-
-	# Override Git repository URL if provided
-	# The git repo URL appears in multiple places:
-	# 1. argocd.initialRepositories - for ArgoCD to access the repo
-	# 2. argocd.applications[].gitRepoUrl - for ApplicationSets
-	if [[ -n "${GIT_REPO_URL:-}" ]]; then
-		cat >>"${values_file}" <<EOF
-argocd:
-  initialRepositories: |
-    - name: cluster-config
-      type: git
-      project: default
-      url: ${GIT_REPO_URL}
-      insecure: true
-    - name: helm-repo
-      type: helm
-      project: default
-      url: ${helm_repo_url}
-  applications:
-  - name: cluster-config
-    annotations:
-    helmRepoUrl: ${helm_repo_url}
-    chart: app-of-apps-infrastructure
-    project: cluster-config-project
-    targetRevision: 0.2.2
-    gitRepoUrl: ${GIT_REPO_URL}
-    adGroup: PFAUTHAD
-    gitPathFile: /infrastructure.yaml
-    repositories:
-    - ${GIT_REPO_URL}
-    - ${helm_repo_url}
-  - name: application-ns
-    annotations:
-    helmRepoUrl: ${helm_repo_url}
-    chart: app-of-apps-application
-    project: application-ns-project
-    targetRevision: 1.5.4
-    gitRepoUrl: ${GIT_REPO_URL}
-    adGroup: PFAUTHAD
-    gitPathFile: /applications-ns.yaml
-    repositories:
-    - ${GIT_REPO_URL}
-    - ${helm_repo_url}
-EOF
-	fi
-
-	# Add application-gitops configuration
-	cat >>"${values_file}" <<EOF
-application-gitops:
-  name: application-gitops
-  gitopsNamespace: application-gitops
-  domain: ${CLUSTER_DOMAIN}
-EOF
-
-	# Add ECR account and region for installplan approver if ECR account is set
-	if [[ -n "${ECR_ACCOUNT:-}" ]]; then
-		cat >>"${values_file}" <<EOF
-helper-installplan-approver:
-  ecr_account: ${ECR_ACCOUNT}
-  aws_region: ${AWS_REGION}
-EOF
-	fi
-
+	# Values file from Terraform output (gitops_bootstrap_hub_values or gitops_bootstrap_spoke_values)
 	local helm_args=(
 		"upgrade" "--install" "${chart_name}"
-		"${HELM_REPO_NAME:-helm_repo_new}/${chart_name}"
+		"${HELM_REPO_NAME:-vp-rosa-gitops}/${chart_name}"
 		"--version" "${chart_version}"
 		"--insecure-skip-tls-verify"
 		"--namespace" "${namespace}"
 		"--wait"
 		"--wait-for-jobs"
-		"--values" "${values_file}"
+		"--values" "${BOOTSTRAP_VALUES_FILE}"
 	)
 
 	# Build helm command string for output (escape quotes for JSON)
@@ -410,8 +316,7 @@ EOF
 	# Helm will automatically install subchart dependencies (like application-gitops) when installing from a repo
 	# Using --wait and --wait-for-jobs ensures post-install hooks complete before Helm returns
 	echo "Installing/Upgrading ${chart_name} chart (this may take several minutes for hooks to complete)..."
-	echo "Using values file: ${values_file}"
-	echo "Values file will be preserved at: ${values_file}"
+	echo "Using values file: ${BOOTSTRAP_VALUES_FILE}"
 
 	helm "${helm_args[@]}"
 
@@ -475,7 +380,6 @@ install_gitops_spoke() {
 	local chart_name="${HELM_CHART_ACM_SPOKE:-cluster-bootstrap-acm-spoke}"
 	local chart_version="${HELM_CHART_ACM_SPOKE_VERSION:-0.6.3}"
 	local namespace="${HELM_NAMESPACE:-openshift-operators}"
-	local gitops_csv="${GITOPS_CSV:-openshift-gitops-operator.v1.16.0-0.1746014725.p}"
 
 	echo "=== Installing GitOps for ACM spoke cluster ==="
 
@@ -496,21 +400,7 @@ install_gitops_spoke() {
 		bad_exit "Missing required environment variables for spoke cluster: ${missing_vars[*]}"
 	fi
 
-	# Ensure CLUSTER_DOMAIN is set (should be set by log_into_cluster, but check just in case)
-	if [[ -z "${CLUSTER_DOMAIN:-}" ]]; then
-		# Extract domain from current cluster context if not set
-		local api_url
-		api_url=$(oc whoami --show-server 2>/dev/null || echo "")
-		if [[ -n "${api_url}" ]]; then
-			CLUSTER_DOMAIN=$(echo "${api_url}" | awk -F'.' '{print $2"."$3"."$4"."$5"."$6}' | awk -F':' '{print $1}')
-			export CLUSTER_DOMAIN
-			echo "Extracted cluster domain from current context: ${CLUSTER_DOMAIN}"
-		else
-			bad_exit "CLUSTER_DOMAIN is not set and cannot be extracted from cluster context"
-		fi
-	fi
-
-	# Extract gitPath components (e.g., nonprod/np-ai-1 -> environment=nonprod)
+	# Extract gitPath components for hub registration (e.g., nonprod/np-ai-1 -> environment=nonprod)
 	local git_environment=""
 	if [[ -n "${GIT_PATH:-}" ]]; then
 		git_environment=$(echo "${GIT_PATH}" | cut -d'/' -f1)
@@ -519,30 +409,18 @@ install_gitops_spoke() {
 	# STEP 1: Deploy spoke cluster components first (ArgoCD, storage, etc.)
 	echo "=== STEP 1: Deploying spoke cluster components ==="
 
-	# Build helm command (always, since helm upgrade --install is idempotent)
+	# Values file from Terraform output (gitops_bootstrap_hub_values or gitops_bootstrap_spoke_values)
 	local helm_args=(
 		"upgrade" "--install" "${chart_name}"
-		"${HELM_REPO_NAME:-helm_repo_new}/${chart_name}"
+		"${HELM_REPO_NAME:-vp-rosa-gitops}/${chart_name}"
 		"--version" "${chart_version}"
 		"--insecure-skip-tls-verify"
 		"--create-namespace"
 		"--namespace" "${namespace}"
 		"--wait"
 		"--wait-for-jobs"
-		"--set" "clusterName=${CLUSTER_NAME}"
-		"--set" "aws_region=${AWS_REGION}"
-		"--set" "domain=${CLUSTER_DOMAIN}"
-		"--set" "gitops_csv=${gitops_csv}"
-		"--set" "application-gitops.name=application-gitops"
-		"--set" "application-gitops.gitopsNamespace=application-gitops"
-		"--set" "application-gitops.domain=${CLUSTER_DOMAIN}"
+		"--values" "${BOOTSTRAP_VALUES_FILE}"
 	)
-
-	# Add optional parameters
-	[[ -n "${git_environment}" ]] && helm_args+=("--set" "environment=${git_environment}")
-	[[ -n "${AWS_ACCOUNT_ID:-}" ]] && helm_args+=("--set" "aws_account=${AWS_ACCOUNT_ID}")
-	[[ -n "${EBS_KMS_KEY_ARN:-}" ]] && helm_args+=("--set" "aws_kms_key_ebs=${EBS_KMS_KEY_ARN}")
-	[[ -n "${EFS_FILE_SYSTEM_ID:-}" ]] && helm_args+=("--set" "fileSystemId=${EFS_FILE_SYSTEM_ID}")
 
 	# Build helm command string for output
 	local helm_command="helm ${helm_args[*]}"
@@ -614,7 +492,7 @@ install_gitops_spoke() {
 		echo "Deploying ${hub_chart_name} chart to hub..."
 		# shellcheck disable=SC2046
 		helm upgrade --install "${hub_registration_chart}" \
-			"${HELM_REPO_NAME:-helm_repo_new}/${hub_chart_name}" \
+			"${HELM_REPO_NAME:-vp-rosa-gitops}/${hub_chart_name}" \
 			--version "${hub_chart_version}" \
 			--insecure-skip-tls-verify \
 			--create-namespace \
@@ -738,7 +616,7 @@ install_aws_privateca_issuer() {
 	echo "Installing/Upgrading ${chart_name} chart..."
 	# shellcheck disable=SC2046
 	helm upgrade --install "${chart_name}" \
-		"${HELM_REPO_NAME:-helm_repo_new}/${chart_name}" \
+		"${HELM_REPO_NAME:-vp-rosa-gitops}/${chart_name}" \
 		--version "${chart_version}" \
 		--set "certManagerRole=${cert_manager_role}" \
 		--set "awsAcmPcaArn=${AWS_PRIVATE_CA_ARN}" \

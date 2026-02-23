@@ -192,8 +192,8 @@ The module creates an HTPasswd identity provider and admin user when `enable_ide
 | additional_machine_pools | Map of additional machine pool IDs keyed by pool name |
 | all_machine_pools | Map of all machine pool IDs (default + additional) keyed by pool name |
 | gitops_bootstrap_enabled | Whether GitOps bootstrap is enabled |
-| gitops_bootstrap_env_vars | Environment variables for running the GitOps bootstrap script |
-| gitops_bootstrap_command | Shell commands to export environment variables for GitOps bootstrap |
+| gitops_bootstrap_acm_mode | ACM mode (hub, spoke, noacm) for selecting values output |
+| gitops_bootstrap_env_exports | Shell export statements for bootstrap script env vars |
 | gitops_bootstrap_script_path | Path to the GitOps bootstrap script |
 
 **Note**: KMS key outputs (EBS, EFS, ETCD) and IAM role outputs (CloudWatch logging, Cert Manager, Secrets Manager) are now in the IAM module. See `modules/infrastructure/iam/README.md` for details.

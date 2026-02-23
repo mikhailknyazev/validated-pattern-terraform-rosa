@@ -104,79 +104,56 @@ output "cluster_credentials_secret_arn" {
   sensitive   = false
 }
 
-# GitOps Bootstrap Configuration Outputs
-# These outputs provide all the environment variables needed to run the bootstrap script manually
-output "gitops_bootstrap_env_vars" {
-  description = "Environment variables for running the GitOps bootstrap script"
-  value = var.enable_gitops_bootstrap ? {
-    # Required variables
-    CLUSTER_NAME       = var.cluster_name
-    CREDENTIALS_SECRET = length(aws_secretsmanager_secret.cluster_credentials) > 0 ? aws_secretsmanager_secret.cluster_credentials[0].name : ""
-    AWS_REGION         = var.region
+output "cluster_domain" {
+  description = "Cluster domain derived from API URL for GitOps bootstrap"
+  value       = var.enable_gitops_bootstrap ? local.cluster_domain : null
+  sensitive   = false
+}
 
-    # ACM configuration
-    ACM_MODE = var.acm_mode
-
-    # Helm chart configuration
-    HELM_REPO_NAME     = var.helm_repo_name
-    HELM_REPO_URL      = var.helm_repo_url
-    HELM_CHART         = var.helm_chart
-    HELM_CHART_VERSION = var.helm_chart_version
-
-    # GitOps operator CSV
-    GITOPS_CSV = var.gitops_csv
-
-    # Optional: Git path for environment extraction
-    GIT_PATH = var.git_path
-
-    # Optional: Git repository URL for cluster-config
-    GIT_REPO_URL = var.gitops_git_repo_url
-
-    # Optional: AWS account and resources
-    AWS_ACCOUNT_ID = local.aws_account_id
-
-    # Optional: ECR account for image pulls
-    ECR_ACCOUNT = var.ecr_account
-
-    # Optional: Storage configuration - KMS keys come from IAM module (via variables)
-    EBS_KMS_KEY_ARN    = var.kms_key_arn
-    EFS_FILE_SYSTEM_ID = var.efs_file_system_id != null ? var.efs_file_system_id : (length(aws_efs_file_system.main) > 0 ? aws_efs_file_system.main[0].id : null)
-
-    # Optional: AWS Private CA Issuer
-    AWS_PRIVATE_CA_ARN = var.aws_private_ca_arn
-    AWSPCA_CSV         = var.awspca_csv
-    AWSPCA_ISSUER      = var.awspca_issuer
-    ZONE_NAME          = var.zone_name
-
-    # ACM Spoke specific (required if ACM_MODE=spoke)
-    HUB_CREDENTIALS_SECRET = var.hub_credentials_secret_name
-    ACM_REGION             = var.acm_region
-
-    # ACM Spoke Helm charts
-    HELM_CHART_ACM_SPOKE                    = var.helm_chart_acm_spoke
-    HELM_CHART_ACM_SPOKE_VERSION            = var.helm_chart_acm_spoke_version
-    HELM_CHART_ACM_HUB_REGISTRATION         = var.helm_chart_acm_hub_registration
-    HELM_CHART_ACM_HUB_REGISTRATION_VERSION = var.helm_chart_acm_hub_registration_version
-
-    # AWS Private CA Helm chart
-    HELM_CHART_AWSPCA         = var.helm_chart_awspca
-    HELM_CHART_AWSPCA_VERSION = var.helm_chart_awspca_version
-
-    # Operation mode - set to true for bootstrap, false for cleanup
-    ENABLE = "true"
-  } : null
+output "gitops_bootstrap_hub_values" {
+  description = "Helm values YAML for cluster-bootstrap chart (hub/standalone mode)"
+  value = var.enable_gitops_bootstrap ? templatefile("${path.module}/templates/hub-values.yaml.tftpl", {
+    cluster_name       = var.cluster_name
+    cluster_domain     = local.cluster_domain
+    gitops_csv         = var.gitops_csv
+    aws_region         = var.region
+    git_path           = var.git_path != null ? var.git_path : ""
+    aws_account_id     = local.aws_account_id
+    ecr_account        = var.ecr_account != null ? var.ecr_account : ""
+    aws_kms_key_ebs    = var.kms_key_arn != null ? var.kms_key_arn : ""
+    efs_file_system_id = var.efs_file_system_id != null ? var.efs_file_system_id : (length(aws_efs_file_system.main) > 0 ? aws_efs_file_system.main[0].id : "")
+    git_repo_url       = var.gitops_git_repo_url != null ? var.gitops_git_repo_url : ""
+    helm_repo_url      = var.helm_repo_url
+  }) : null
   sensitive = false
 }
 
-output "gitops_bootstrap_command" {
-  description = <<EOF
-  Shell commands to export environment variables for the GitOps bootstrap script.
+output "gitops_bootstrap_spoke_values" {
+  description = "Helm values YAML for cluster-bootstrap-acm-spoke chart"
+  value = var.enable_gitops_bootstrap ? templatefile("${path.module}/templates/spoke-values.yaml.tftpl", {
+    cluster_name       = var.cluster_name
+    aws_region         = var.region
+    cluster_domain     = local.cluster_domain
+    gitops_csv         = var.gitops_csv
+    environment        = var.git_path != null && var.git_path != "" ? try(element(split("/", var.git_path), 0), "") : ""
+    aws_account_id     = local.aws_account_id
+    aws_kms_key_ebs    = var.kms_key_arn != null ? var.kms_key_arn : ""
+    efs_file_system_id = var.efs_file_system_id != null ? var.efs_file_system_id : (length(aws_efs_file_system.main) > 0 ? aws_efs_file_system.main[0].id : "")
+  }) : null
+  sensitive = false
+}
 
-  Usage:
-    # Export variables and run script
-    eval $(terraform output -raw gitops_bootstrap_command)
-    $(terraform output -raw gitops_bootstrap_script_path)
-  EOF
+# GitOps Bootstrap: ACM mode (hub/spoke/noacm) for selecting which values output to use
+output "gitops_bootstrap_acm_mode" {
+  description = "ACM mode for GitOps bootstrap (hub, spoke, or noacm); use to select gitops_bootstrap_hub_values or gitops_bootstrap_spoke_values"
+  value       = var.enable_gitops_bootstrap ? var.acm_mode : null
+  sensitive   = false
+}
+
+# GitOps Bootstrap: Shell export statements for bootstrap script env vars.
+# Makefile writes values file and sets BOOTSTRAP_VALUES_FILE; eval this for the rest.
+output "gitops_bootstrap_env_exports" {
+  description = "Shell export statements for GitOps bootstrap script env vars. Run: eval $(terraform output -raw gitops_bootstrap_env_exports). Makefile sets BOOTSTRAP_VALUES_FILE after writing values from gitops_bootstrap_hub_values or gitops_bootstrap_spoke_values."
   value = var.enable_gitops_bootstrap && length(aws_secretsmanager_secret.cluster_credentials) > 0 ? join("\n", compact([
     "export CLUSTER_NAME='${var.cluster_name}'",
     "export CREDENTIALS_SECRET='${aws_secretsmanager_secret.cluster_credentials[0].name}'",
@@ -186,20 +163,9 @@ output "gitops_bootstrap_command" {
     "export HELM_REPO_URL='${var.helm_repo_url}'",
     "export HELM_CHART='${var.helm_chart}'",
     "export HELM_CHART_VERSION='${var.helm_chart_version}'",
-    "export GITOPS_CSV='${var.gitops_csv}'",
-    var.git_path != null ? "export GIT_PATH='${var.git_path}'" : "",
-    var.gitops_git_repo_url != null ? "export GIT_REPO_URL='${var.gitops_git_repo_url}'" : "",
-    "export AWS_ACCOUNT_ID='${local.aws_account_id}'",
-    var.ecr_account != null ? "export ECR_ACCOUNT='${var.ecr_account}'" : "",
-    var.kms_key_arn != null ? "export EBS_KMS_KEY_ARN='${var.kms_key_arn}'" : "",
-    var.efs_file_system_id != null ? "export EFS_FILE_SYSTEM_ID='${var.efs_file_system_id}'" : (length(aws_efs_file_system.main) > 0 ? "export EFS_FILE_SYSTEM_ID='${aws_efs_file_system.main[0].id}'" : ""),
-    var.aws_private_ca_arn != null ? "export AWS_PRIVATE_CA_ARN='${var.aws_private_ca_arn}'" : "",
-    var.awspca_csv != null ? "export AWSPCA_CSV='${var.awspca_csv}'" : "",
-    var.awspca_issuer != null ? "export AWSPCA_ISSUER='${var.awspca_issuer}'" : "",
-    var.zone_name != null ? "export ZONE_NAME='${var.zone_name}'" : "",
-    var.cert_manager_role_arn != null ? "export CERT_MANAGER_ROLE_ARN='${var.cert_manager_role_arn}'" : "",
-    var.hub_credentials_secret_name != null ? "export HUB_CREDENTIALS_SECRET='${var.hub_credentials_secret_name}'" : "",
-    var.acm_region != null ? "export ACM_REGION='${var.acm_region}'" : "",
+    var.hub_credentials_secret_name != null && var.hub_credentials_secret_name != "" ? "export HUB_CREDENTIALS_SECRET='${var.hub_credentials_secret_name}'" : "",
+    var.acm_region != null && var.acm_region != "" ? "export ACM_REGION='${var.acm_region}'" : "",
+    var.git_path != null && var.git_path != "" ? "export GIT_PATH='${var.git_path}'" : "",
     var.helm_chart_acm_spoke != null ? "export HELM_CHART_ACM_SPOKE='${var.helm_chart_acm_spoke}'" : "",
     var.helm_chart_acm_spoke_version != null ? "export HELM_CHART_ACM_SPOKE_VERSION='${var.helm_chart_acm_spoke_version}'" : "",
     var.helm_chart_acm_hub_registration != null ? "export HELM_CHART_ACM_HUB_REGISTRATION='${var.helm_chart_acm_hub_registration}'" : "",

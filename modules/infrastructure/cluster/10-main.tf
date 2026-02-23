@@ -22,6 +22,10 @@ locals {
   termination_protection_script_path = "${path.root}/../scripts/cluster/termination-protection.sh"
   bootstrap_gitops_script_path       = "${path.root}/../scripts/cluster/bootstrap-gitops.sh"
 
+  # Cluster domain for GitOps bootstrap values
+  # Use the cluster resource's domain attribute (read-only, "DNS domain of cluster") when cluster exists
+  cluster_domain = length(rhcs_cluster_rosa_hcp.main) > 0 ? one(rhcs_cluster_rosa_hcp.main[*].domain) : ""
+
   # AWS account ID (available via data source)
   aws_account_id = data.aws_caller_identity.current.account_id
 
