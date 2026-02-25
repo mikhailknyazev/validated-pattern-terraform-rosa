@@ -34,6 +34,7 @@ CLUSTER_TFVARS="$CLUSTER_DIR/terraform.tfvars"
 PLAN_FILE="../clusters/$CLUSTER_NAME/terraform.tfplan"
 
 terraform plan \
+	-var="cluster_config_dir=$CLUSTER_NAME" \
 	-var-file="$CLUSTER_TFVARS" \
 	-out="$PLAN_FILE"
 

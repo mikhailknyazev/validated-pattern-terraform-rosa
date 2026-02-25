@@ -21,7 +21,7 @@ The repository is organized around infrastructure modules:
 - AWS CLI configured with appropriate credentials
 - RHCS API authentication (see [RHCS API Authentication](#rhcs-api-authentication) - set credentials before using make)
 - `oc` CLI installed (for cluster access)
-- `sshuttle` installed (for egress-zero cluster access via bastion) - `brew install sshuttle` on macOS
+- For private/egress-zero clusters: **AWS Client VPN** (recommended) or `sshuttle` with bastion - see [Accessing Private Clusters](#aws-client-vpn-for-private-clusters)
 
 ### RHCS API Authentication
 
@@ -144,7 +144,8 @@ rosa-hcp-infrastructure/
 │       ├── network-existing/   # Use existing VPC
 │       ├── iam/                # IAM roles, OIDC configuration, KMS keys, operator IAM roles
 │       ├── cluster/            # ROSA HCP Cluster module (includes identity provider, EFS storage, GitOps bootstrap script)
-│       └── bastion/            # Bastion host for egress-zero cluster access
+│       ├── bastion/            # Bastion host (deprecated; use client-vpn)
+│       └── client-vpn/         # AWS Client VPN for private cluster access (recommended)
 └── clusters/                   # Cluster configurations
     ├── public/                 # Example public cluster (reference)
     │   └── terraform.tfvars   # Cluster-specific variables
@@ -158,7 +159,8 @@ rosa-hcp-infrastructure/
 - **Network** (`network-public`, `network-private`, `network-existing`): VPC, subnets, NAT gateways, VPC endpoints
 - **IAM** (`iam`): IAM roles, OIDC configuration, **KMS keys** (EBS, EFS, ETCD), **IAM roles for operators** (CloudWatch logging, Cert Manager, Secrets Manager, CSI drivers)
 - **Cluster** (`cluster`): ROSA HCP cluster, machine pools, identity provider, **EFS file system**, GitOps bootstrap script
-- **Bastion** (`bastion`): Optional bastion host for egress-zero cluster access
+- **Bastion** (`bastion`): Deprecated; optional bastion for sshuttle (use Client VPN instead)
+- **Client VPN** (`client-vpn`): Optional AWS Client VPN endpoint for private cluster access (recommended)
 
 ### Module Architecture
 
@@ -505,8 +507,10 @@ make apply.my-cluster
   - CloudWatch audit logging configuration (IAM role from IAM module)
   - Cluster termination protection
 
-- **bastion**: Bastion host for egress-zero cluster access
+- **bastion**: Bastion host (deprecated; use client-vpn)
   - SSM Session Manager support
+- **client-vpn**: AWS Client VPN endpoint for private cluster access (default for egress-zero)
+  - OpenVPN-compatible .ovpn config, mutual TLS auth
   - Pre-installed tools (`oc`, `kubectl`)
   - **Development/demo use only** - not for production
 
@@ -520,6 +524,7 @@ All cluster operations are implemented as bash scripts in the `scripts/` directo
 
 - **`scripts/cluster/`**: Infrastructure and configuration management
 - **`scripts/tunnel/`**: Tunnel management for egress-zero clusters
+- **`scripts/vpn/`**: VPN config retrieval for Client VPN
 - **`scripts/utils/`**: Utility functions (password retrieval, token management, etc.)
 - **`scripts/info/`**: Cluster information and access
 
@@ -564,9 +569,13 @@ make tunnel-start.egress-zero
 - `show-credentials.<cluster>` - Show admin credentials and endpoints
 
 **Bastion & Tunnel (Egress-Zero clusters):**
-- `tunnel-start.<cluster>` - Start sshuttle VPN tunnel
+- `vpn-config.<cluster>` - Show AWS Client VPN config path and connection instructions
+- `vpn-start.<cluster>` - Start OpenVPN tunnel (auto-run before bootstrap/login)
+- `vpn-stop.<cluster>` - Stop OpenVPN tunnel
+- `vpn-status.<cluster>` - Check OpenVPN tunnel status
+- `tunnel-start.<cluster>` - Start sshuttle via bastion (deprecated; manual use)
 - `tunnel-stop.<cluster>` - Stop sshuttle tunnel
-- `tunnel-status.<cluster>` - Check tunnel status
+- `tunnel-status.<cluster>` - Check sshuttle tunnel status
 - `bastion-connect.<cluster>` - Connect to bastion via SSM
 
 **Code Quality:**
@@ -581,35 +590,42 @@ make tunnel-start.egress-zero
 
 See `make help` for complete list of targets.
 
-## Bastion Host for Egress-Zero Clusters
+## AWS Client VPN for Private Clusters
 
-> **⚠️ Development/Demo Use Only**: The bastion host is provided for development and demonstration purposes. For production deployments, use AWS Transit Gateway, Direct Connect, or VPN connections instead.
-
-Egress-zero clusters include an optional bastion host for secure access:
-
-- **SSM Session Manager**: No public IP, access via AWS Systems Manager (recommended)
-- **Pre-installed Tools**: OpenShift CLI (`oc`), Kubernetes CLI (`kubectl`)
-- **sshuttle VPN Tunnel**: Routes all VPC traffic through bastion for full cluster access
-
-### Using sshuttle Tunnel
-
-The `tunnel-start.<cluster>` target creates a VPN-like tunnel using `sshuttle`:
+**Recommended** for private cluster access: AWS Client VPN provides robust, cross-platform connectivity using standard OpenVPN clients (AWS VPN Client, OpenVPN, Tunnelblick). No sshuttle or bastion required.
 
 ```bash
-# Start tunnel (requires sudo - you'll be prompted for password)
-make tunnel-start.egress-zero
+# Enable in terraform.tfvars:
+enable_client_vpn = true
 
-# Tunnel is now active - all traffic to VPC CIDR routes through bastion
-# You can now use oc login with the direct API URL
-make login.egress-zero
+# After terraform apply, get config path and instructions:
+make cluster.egress-zero.vpn-config
 
-# Stop tunnel when done
-make tunnel-stop.egress-zero
+# Import the .ovpn file into your VPN client and connect
+# Then access cluster API/console directly
 ```
 
-**Why sshuttle?** Unlike SSH port forwarding, sshuttle routes **all VPC traffic** through the bastion, enabling OAuth flows required for `oc login` to work correctly.
+The `.ovpn` file is written to `clusters/<cluster-name>/<cluster-name>-vpn-client.ovpn`. Cost: ~$108-150/mo (1 subnet).
 
-See `modules/bastion/README.md` for detailed documentation.
+## Bastion Host and sshuttle (Deprecated)
+
+> **Deprecated**: The bastion host and sshuttle tunnel are no longer used by default. AWS Client VPN (above) is the default for egress-zero clusters. Bastion/sshuttle modules remain available for manual use.
+
+Egress-zero clusters previously used an optional bastion with sshuttle. This is **deprecated**—use AWS Client VPN instead. If you need bastion/sshuttle:
+
+- Set `enable_bastion = true` in terraform.tfvars
+- Run `make cluster.<name>.tunnel-start` manually (not auto-started by bootstrap/login)
+- **SSM Session Manager**: No public IP, access via AWS Systems Manager
+- **sshuttle**: Routes VPC traffic through bastion
+
+```bash
+# Manual tunnel start (requires enable_bastion=true)
+make cluster.egress-zero.tunnel-start
+make cluster.egress-zero.tunnel-stop
+make cluster.egress-zero.tunnel-status
+```
+
+See `modules/bastion/README.md` for details.
 
 ## Admin User Management
 
@@ -818,7 +834,7 @@ This allows sleeping the cluster while preserving IAM roles and OIDC configurati
 - ⚠️ **network-egress-zero**: Deprecated (use `network-private` with `zero_egress = true`)
 - ✅ **iam**: Production-ready (includes KMS keys, IAM roles for operators)
 - ✅ **cluster**: Production-ready (includes identity provider, EFS storage, GitOps bootstrap script)
-- ✅ **bastion**: Production-ready (dev/demo use only)
+- ✅ **bastion**: Deprecated (use client-vpn)
 
 ## Development Setup
 

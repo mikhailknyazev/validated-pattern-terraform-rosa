@@ -22,7 +22,8 @@ rosa-hcp-infrastructure/
 │       ├── network-existing/    # DEPRECATED - use network_type="existing" instead
 │       ├── iam/                # IAM & OIDC module
 │       ├── cluster/            # ROSA HCP Cluster module (includes identity provider, storage, GitOps bootstrap)
-│       └── bastion/            # Bastion host for private cluster access
+│       ├── bastion/            # Bastion host for private cluster access (fallback to sshuttle)
+│       └── client-vpn/        # AWS Client VPN for private cluster access (recommended)
 ├── terraform/                  # Unified Terraform configuration (shared across clusters)
 │   ├── 00-providers.tf
 │   ├── 01-variables.tf

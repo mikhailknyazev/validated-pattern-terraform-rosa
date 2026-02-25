@@ -111,6 +111,34 @@ output "bastion_sshuttle_command" {
   sensitive   = false
 }
 
+#------------------------------------------------------------------------------
+# AWS Client VPN (when enable_client_vpn = true)
+#------------------------------------------------------------------------------
+
+output "client_vpn_deployed" {
+  description = "Whether AWS Client VPN endpoint was deployed"
+  value       = var.enable_client_vpn && length(module.client_vpn) > 0
+  sensitive   = false
+}
+
+output "client_vpn_endpoint_id" {
+  description = "ID of the AWS Client VPN endpoint"
+  value       = var.enable_client_vpn && length(module.client_vpn) > 0 ? module.client_vpn[0].vpn_endpoint_id : null
+  sensitive   = false
+}
+
+output "client_vpn_config_path" {
+  description = "Path to the .ovpn client configuration file (relative to project root when using scripts)"
+  value       = var.enable_client_vpn && length(module.client_vpn) > 0 ? "./clusters/${coalesce(var.cluster_config_dir, var.cluster_name)}/${var.cluster_name}-vpn-client.ovpn" : null
+  sensitive   = false
+}
+
+output "client_vpn_connection_instructions" {
+  description = "Instructions for connecting to the Client VPN"
+  value       = var.enable_client_vpn && length(module.client_vpn) > 0 ? module.client_vpn[0].connection_instructions : null
+  sensitive   = false
+}
+
 output "aws_account_id" {
   description = "AWS account ID where the cluster is deployed"
   value       = module.cluster.aws_account_id

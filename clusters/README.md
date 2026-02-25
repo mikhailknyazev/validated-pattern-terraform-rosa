@@ -250,23 +250,31 @@ See [scripts/README.md](../scripts/README.md) for complete script documentation 
 
 ### VPN Tunnel Requirement
 
-Egress-zero clusters use a private API endpoint (PrivateLink), so you need a VPN tunnel to access the API. The Makefile automatically starts the tunnel when needed for cluster operations.
+Egress-zero clusters use a private API endpoint (PrivateLink), so you need a VPN tunnel to access the API. **AWS Client VPN** is the default and is started automatically when you run `bootstrap` or `login` (when `enable_client_vpn = true`).
 
-**Manual tunnel management:**
+**Client VPN (default):**
 ```bash
-# Start tunnel
-make cluster.<cluster-name>.tunnel-start
+# Start OpenVPN tunnel (also runs automatically before bootstrap/login)
+make cluster.<cluster-name>.vpn-start
 
-# Check tunnel status
-make cluster.<cluster-name>.tunnel-status
+# Check status
+make cluster.<cluster-name>.vpn-status
 
 # Stop tunnel
-make cluster.<cluster-name>.tunnel-stop
+make cluster.<cluster-name>.vpn-stop
 ```
 
-### Bastion Host
+**Bastion + sshuttle (deprecated):** The bastion and sshuttle tunnel modules remain available but are no longer auto-started. If you need them, set `enable_bastion = true` and run `tunnel-start` manually:
 
-The bastion host is required for VPN tunnel access. Ensure `enable_bastion = true` in your `terraform.tfvars` for egress-zero clusters.
+```bash
+make cluster.<cluster-name>.tunnel-start
+make cluster.<cluster-name>.tunnel-stop
+make cluster.<cluster-name>.tunnel-status
+```
+
+### Bastion Host (Deprecated)
+
+The bastion host is deprecated in favor of AWS Client VPN. Set `enable_bastion = true` only if you need sshuttle-based access.
 
 **Connect to bastion:**
 ```bash
@@ -286,11 +294,12 @@ If you get "Cluster directory does not exist":
 
 ### Tunnel Issues (Egress-Zero)
 
-If tunnel fails to start:
-- Ensure bastion is deployed: `enable_bastion = true`
-- Check bastion status: `make cluster.egress-zero.bastion-connect`
-- Verify SSM VPC endpoints are configured
-- Check AWS credentials and permissions
+If Client VPN tunnel fails to start:
+- Ensure Client VPN is deployed: `enable_client_vpn = true` in terraform.tfvars
+- Install OpenVPN: `brew install openvpn` (macOS) or `apt install openvpn` (Linux)
+- Run `make cluster.<name>.vpn-config` for connection instructions
+
+For deprecated sshuttle: ensure `enable_bastion = true`, check bastion via `bastion-connect`, verify SSM VPC endpoints.
 
 ### Backend Configuration Errors
 

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Client VPN config path wrong directory**: VPN .ovpn files were written to `clusters/${cluster_name}/` instead of `clusters/${directory}/`. Added `cluster_config_dir` variable; plan script now passes `-var "cluster_config_dir=$CLUSTER_NAME"` so output path matches the Makefile cluster directory (e.g., `egress-zero`).
+- **Client VPN connection instructions path format**: Instructions now show path relative to project root (`./clusters/<cluster-dir>/<name>-vpn-client.ovpn`) instead of terraform-relative path. Added `client_config_display_path` to module; root outputs use constructed path.
 - **ArgoCD application-gitops invalid initialRepositories**: application-gitops subchart passed `null` to ArgoCD CR `spec.initialRepositories` when not set, causing validation error. The API expects a string (YAML/JSON), not array. Set `application-gitops.argocd.initialRepositories: "[]"` in hub-values template.
 - **GitOps operator not installing**: cluster-bootstrap Helm chart subscriptions default to `csv: null`, which produces invalid `spec.startingCSV: null` in the Subscription (Kubernetes rejects null). Added subscription override in values file (`subscriptions[0].csv`) so the GitOps operator installs correctly. Using values file merge (not `--set`) preserves name, channel, source, and sourceNamespace from chart defaults.
 
@@ -35,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/guides/log-forwarders
 
 ### Added
+- **AWS Client VPN** (`enable_client_vpn`): Terraform module for robust private cluster access
+  - Creates AWS Client VPN endpoint in VPC with mutual TLS authentication
+  - Generates `.ovpn` config for OpenVPN, AWS VPN Client, or Tunnelblick
+  - Recommended over sshuttle/bastion for cross-platform reliability
+  - Single subnet by default (~$108/mo); configurable for multi-subnet HA
+  - New variables: `enable_client_vpn`, `vpn_client_cidr_block`, `vpn_split_tunnel`, `vpn_session_timeout_hours`
+  - Makefile targets: `vpn-config.<cluster>` (config path/instructions), `vpn-start.<cluster>`, `vpn-stop.<cluster>`, `vpn-status.<cluster>` for OpenVPN tunnel control
+  - `ensure-tunnel` starts OpenVPN automatically when Client VPN is deployed (bootstrap/login)
 - **BYO VPC Support** (`network_type = "existing"`): Deploy clusters into an existing VPC without running any network module
   - New variables: `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids`
   - Root module uses data sources to look up subnets and constructs synthetic `local.network` object
@@ -43,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New example: `clusters/byo-vpc/terraform.tfvars` with prerequisite documentation
 
 ### Deprecated
+- **Bastion and sshuttle**: No longer used by default for egress-zero clusters. AWS Client VPN is the default. Bastion/sshuttle modules remain available; `tunnel-start`/`tunnel-stop`/`tunnel-status` targets exist for manual use, but `ensure-tunnel` no longer auto-starts sshuttle. Set `enable_bastion = true` and run `tunnel-start` manually if needed.
 - **network-existing module**: Deprecated in favor of `network_type = "existing"`. The root module now handles BYO VPC directly via variables and data sources. The module will be removed in a future release.
 - **RHCS API Authentication Options**: Documented two authentication methods for the RHCS provider:
   - **Option 1 (Token):** `RHCS_TOKEN` — offline token from console.redhat.com

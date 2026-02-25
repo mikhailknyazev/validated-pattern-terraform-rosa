@@ -22,7 +22,7 @@ check-cluster:
 .PHONY: help init plan apply destroy destroy_force sleep fmt validate clean
 .PHONY: show-endpoints show-credentials show-timing login verify
 .PHONY: tunnel-start tunnel-stop tunnel-status bastion-connect
-.PHONY: bootstrap ensure-tunnel
+.PHONY: vpn-config vpn-start vpn-stop vpn-status bootstrap ensure-tunnel
 
 help: ## Show this help message
 	@$(SCRIPT_DIR)/utils/get-network-config.sh $(CLUSTER_DIR) >/dev/null 2>&1 || true; \
@@ -55,11 +55,17 @@ help: ## Show this help message
 	echo "  make cluster.$(CLUSTER_NAME).login             Login to cluster using oc CLI"; \
 	echo "  make cluster.$(CLUSTER_NAME).verify           Verify cluster deployment and GitOps"; \
 	echo ""; \
-	echo "$(GREEN)Bastion & Tunnel Management:$(NC)"; \
-	echo "  make cluster.$(CLUSTER_NAME).tunnel-start      Start sshuttle VPN tunnel via bastion"; \
+	echo "$(GREEN)Bastion & Tunnel (deprecated):$(NC)"; \
+	echo "  make cluster.$(CLUSTER_NAME).tunnel-start      Start sshuttle via bastion (manual use)"; \
 	echo "  make cluster.$(CLUSTER_NAME).tunnel-stop       Stop sshuttle tunnel"; \
 	echo "  make cluster.$(CLUSTER_NAME).tunnel-status    Check if tunnel is running"; \
-	echo "  make cluster.$(CLUSTER_NAME).bastion-connect   Connect to bastion via SSM Session Manager"; \
+	echo "  make cluster.$(CLUSTER_NAME).bastion-connect  Connect to bastion via SSM Session Manager"; \
+	echo ""; \
+	echo "$(GREEN)AWS Client VPN:$(NC)"; \
+	echo "  make cluster.$(CLUSTER_NAME).vpn-config        Show VPN config path and connection instructions"; \
+	echo "  make cluster.$(CLUSTER_NAME).vpn-start       Start OpenVPN tunnel"; \
+	echo "  make cluster.$(CLUSTER_NAME).vpn-stop        Stop OpenVPN tunnel"; \
+	echo "  make cluster.$(CLUSTER_NAME).vpn-status      Check if OpenVPN tunnel is running"; \
 	echo ""; \
 	echo "$(BLUE)Network Type:$(NC) $$NETWORK_TYPE (mode: $$MODE)"; \
 	echo "$(BLUE)Available clusters:$(NC)"; \
@@ -182,12 +188,26 @@ tunnel-stop: check-cluster
 tunnel-status: check-cluster
 	@$(SCRIPT_DIR)/tunnel/status.sh $(CLUSTER_NAME)
 
-# Ensure tunnel is started if bastion exists
+# VPN config - show .ovpn path and connection instructions
+vpn-config: check-cluster
+	@$(SCRIPT_DIR)/vpn/config.sh $(CLUSTER_NAME)
+
+# VPN tunnel operations (OpenVPN)
+vpn-start: check-cluster
+	@$(SCRIPT_DIR)/vpn/start.sh $(CLUSTER_NAME)
+
+vpn-stop: check-cluster
+	@$(SCRIPT_DIR)/vpn/stop.sh $(CLUSTER_NAME)
+
+vpn-status: check-cluster
+	@$(SCRIPT_DIR)/vpn/status.sh $(CLUSTER_NAME)
+
+# Ensure tunnel is started when Client VPN is deployed (deprecated: sshuttle no longer auto-started)
 ensure-tunnel: check-cluster
 	@cd $(TERRAFORM_DIR) && \
-		BASTION_ID=$$(terraform output -no-color -raw bastion_instance_id 2>/dev/null | tr -d '\n\r' | sed 's/[[:space:]]*$$//') && \
-		if [ -n "$$BASTION_ID" ] && [ "$$BASTION_ID" != "null" ]; then \
-			cd - >/dev/null && $(SCRIPT_DIR)/tunnel/start.sh $(CLUSTER_NAME); \
+		VPN_DEPLOYED=$$(terraform output -no-color -raw client_vpn_deployed 2>/dev/null | tr -d '\n\r' | sed 's/[[:space:]]*$$//') && \
+		if [ "$$VPN_DEPLOYED" = "true" ]; then \
+			cd - >/dev/null && $(SCRIPT_DIR)/vpn/start.sh $(CLUSTER_NAME); \
 		fi
 
 # Bastion operations

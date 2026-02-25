@@ -4,6 +4,17 @@ variable "cluster_name" {
   nullable    = false
 }
 
+variable "cluster_config_dir" {
+  description = <<-EOF
+    Directory name under clusters/ containing this cluster's terraform.tfvars.
+    Used for outputs like VPN config path. When null, defaults to cluster_name.
+    Scripts pass this via -var to match the Makefile cluster directory (e.g., egress-zero).
+  EOF
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "network_type" {
   description = "Network topology type: 'public', 'private', or 'existing'. Use 'existing' for BYO VPC (Bring Your Own)—you provide VPC and subnet IDs; no network module runs. Zero egress mode (zero_egress) is a separate cluster-level property that can be set independently, though it typically requires 'private' network type for PrivateLink API endpoint."
   type        = string
@@ -327,6 +338,49 @@ variable "bastion_public_ssh_key" {
   type        = string
   default     = "~/.ssh/id_rsa.pub"
   nullable    = false
+}
+
+#------------------------------------------------------------------------------
+# AWS Client VPN (recommended for private cluster access)
+#------------------------------------------------------------------------------
+
+variable "enable_client_vpn" {
+  description = <<-EOF
+    Enable AWS Client VPN endpoint for private cluster access.
+
+    Client VPN provides robust, cross-platform access using standard OpenVPN
+    clients (AWS VPN Client, OpenVPN, Tunnelblick). Recommended over
+    sshuttle/bastion for teams.
+  EOF
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "vpn_client_cidr_block" {
+  description = "CIDR block for VPN client IP addresses. Must not overlap with VPC CIDR. Minimum /22."
+  type        = string
+  default     = "10.100.0.0/22"
+  nullable    = false
+}
+
+variable "vpn_split_tunnel" {
+  description = "Enable split tunnel mode. When true, only VPC-destined traffic goes through VPN."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "vpn_session_timeout_hours" {
+  description = "VPN session timeout in hours (8-24)."
+  type        = number
+  default     = 12
+  nullable    = false
+
+  validation {
+    condition     = var.vpn_session_timeout_hours >= 8 && var.vpn_session_timeout_hours <= 24
+    error_message = "VPN session timeout must be between 8 and 24 hours."
+  }
 }
 
 # Destroy Protection Variables

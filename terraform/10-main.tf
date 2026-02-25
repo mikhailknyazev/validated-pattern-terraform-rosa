@@ -394,3 +394,29 @@ module "bastion" {
 
   # Terraform will infer network module dependency from vpc_id and subnet_ids references
 }
+
+#------------------------------------------------------------------------------
+# AWS Client VPN (recommended for private cluster access)
+#------------------------------------------------------------------------------
+# Creates an OpenVPN-compatible endpoint for robust access to private clusters.
+# Alternative to sshuttle/bastion - works with AWS VPN Client, OpenVPN, Tunnelblick.
+# Reference: ./reference/rosa-tf/modules/networking/client-vpn/
+
+module "client_vpn" {
+  count  = var.enable_client_vpn && var.persists_through_sleep && length(local.network.private_subnet_ids) > 0 ? 1 : 0
+  source = "../modules/infrastructure/client-vpn"
+
+  cluster_name               = var.cluster_name
+  vpc_id                     = local.network.vpc_id
+  vpc_cidr                   = var.vpc_cidr
+  subnet_ids                 = [local.network.private_subnet_ids[0]] # Single subnet for cost savings
+  client_cidr_block          = var.vpn_client_cidr_block
+  split_tunnel               = var.vpn_split_tunnel
+  session_timeout_hours      = var.vpn_session_timeout_hours
+  output_dir                 = "${path.root}/../clusters/${coalesce(var.cluster_config_dir, var.cluster_name)}"
+  client_config_display_path = "./clusters/${coalesce(var.cluster_config_dir, var.cluster_name)}/${var.cluster_name}-vpn-client.ovpn"
+  cluster_domain             = module.cluster.cluster_domain
+  service_cidr               = var.service_cidr
+
+  tags = local.tags
+}

@@ -10,9 +10,15 @@ private      = true     # Private API endpoint (PrivateLink). Independent of net
 region       = "ap-southeast-2"
 vpc_cidr     = "10.30.0.0/16"
 
-# Bastion Host
-enable_bastion    = true  # Required for egress-zero clusters (SSM Session Manager access)
-bastion_public_ip = false # SSM-only access (required for egress-zero, no public IP)
+# Bastion Host (deprecated - use AWS Client VPN instead)
+enable_bastion    = false # Set true only if you need sshuttle fallback; Client VPN is preferred
+bastion_public_ip = false
+
+# AWS Client VPN (default for egress-zero; required for bootstrap/login)
+enable_client_vpn         = true
+vpn_client_cidr_block     = "10.100.0.0/22" # Must not overlap with vpc_cidr
+vpn_split_tunnel          = true
+vpn_session_timeout_hours = 12
 
 # Cluster Topology
 multi_az = true # Multi-AZ for production HA (availability zones automatically determined)

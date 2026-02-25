@@ -40,6 +40,9 @@ terraform.rc
 .rhcs_creds
 .rhcs_client_creds
 
+# AWS Client VPN configs (contain certs and keys)
+*.ovpn
+
 # IDE files
 .vscode/
 .idea/
