@@ -49,22 +49,41 @@ data "aws_subnet" "existing_public" {
   id    = coalesce(var.existing_public_subnet_ids, [])[count.index]
 }
 
-# Create a local to reference the active network (from module or synthetic for BYO VPC)
+# Create a normalized network object from the active network source.
+# Each branch constructs an object with identical attributes and explicit tolist()
+# conversions to ensure consistent list(string) types across all branches.
+# Without this normalization, Terraform's type checker fails because module splat
+# expressions produce fixed-length tuples (e.g. tuple([string,string,string]))
+# that are incompatible with the empty tuples from unused data sources.
 locals {
-  # Synthetic network object for BYO VPC (same shape as network module outputs)
-  existing_network = var.network_type == "existing" ? {
-    vpc_id               = var.existing_vpc_id
-    vpc_cidr_block       = var.vpc_cidr
-    private_subnet_ids   = var.existing_private_subnet_ids
-    public_subnet_ids    = coalesce(var.existing_public_subnet_ids, [])
-    private_subnet_azs   = [for s in data.aws_subnet.existing_private : s.availability_zone]
-    private_subnet_cidrs = [for s in data.aws_subnet.existing_private : s.cidr_block]
-  } : null
-
   network = (
-    var.network_type == "public" ? module.network_public[0] :
-    var.network_type == "existing" ? local.existing_network :
-    module.network_private[0]
+    var.network_type == "public" ? {
+      vpc_id               = module.network_public[0].vpc_id
+      vpc_cidr_block       = module.network_public[0].vpc_cidr_block
+      private_subnet_ids   = tolist(module.network_public[0].private_subnet_ids)
+      public_subnet_ids    = tolist(module.network_public[0].public_subnet_ids)
+      private_subnet_azs   = tolist(module.network_public[0].private_subnet_azs)
+      private_subnet_cidrs = tolist(module.network_public[0].private_subnet_cidrs)
+      security_group_id    = null
+    } :
+    var.network_type == "existing" ? {
+      vpc_id               = var.existing_vpc_id
+      vpc_cidr_block       = var.vpc_cidr
+      private_subnet_ids   = tolist(coalesce(var.existing_private_subnet_ids, []))
+      public_subnet_ids    = tolist(coalesce(var.existing_public_subnet_ids, []))
+      private_subnet_azs   = tolist([for s in data.aws_subnet.existing_private : s.availability_zone])
+      private_subnet_cidrs = tolist([for s in data.aws_subnet.existing_private : s.cidr_block])
+      security_group_id    = null
+    } :
+    {
+      vpc_id               = module.network_private[0].vpc_id
+      vpc_cidr_block       = module.network_private[0].vpc_cidr_block
+      private_subnet_ids   = tolist(module.network_private[0].private_subnet_ids)
+      public_subnet_ids    = tolist([])
+      private_subnet_azs   = tolist(module.network_private[0].private_subnet_azs)
+      private_subnet_cidrs = tolist(module.network_private[0].private_subnet_cidrs)
+      security_group_id    = module.network_private[0].security_group_id
+    }
   )
 }
 

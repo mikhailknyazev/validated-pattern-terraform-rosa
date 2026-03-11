@@ -4,9 +4,9 @@
 # cluster_name = "prod-egress-zero-01"
 
 # Network Configuration
-network_type = "public" # NOTE: A real egress-zero would use "private" but needs Git access via CodeCommit/VPC endpoints
-zero_egress  = true     # Enables zero egress mode (no internet egress, only VPC endpoints). Matches ROSA API property name.
-private      = true     # Private API endpoint (PrivateLink). Independent of network_type - can have private API in VPC with public subnets
+network_type = "private" # NOTE: A real egress-zero would use "private" but needs Git access via CodeCommit/VPC endpoints
+zero_egress  = true      # Enables zero egress mode (no internet egress, only VPC endpoints). Matches ROSA API property name.
+private      = true      # Private API endpoint (PrivateLink). Independent of network_type - can have private API in VPC with public subnets
 region       = "ap-southeast-2"
 vpc_cidr     = "10.30.0.0/16"
 
