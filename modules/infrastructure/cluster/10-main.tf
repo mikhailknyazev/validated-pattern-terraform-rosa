@@ -187,7 +187,16 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   service_cidr = var.service_cidr
   pod_cidr     = var.pod_cidr
   host_prefix  = var.host_prefix
-
+  proxy = var.http_proxy != null || var.https_proxy != null || var.no_proxy != null || var.additional_trust_bundle != null ? (
+    {
+      http_proxy              = var.http_proxy
+      https_proxy             = var.https_proxy
+      no_proxy                = var.no_proxy
+      additional_trust_bundle = var.additional_trust_bundle
+    }
+    ) : (
+    null
+  )
   # DNS domain configuration
   # Reference: ./reference/rosa-hcp-dedicated-vpc/terraform/1.main.tf:103
   base_dns_domain = var.enable_persistent_dns_domain ? rhcs_dns_domain.dns_domain[0].id : null

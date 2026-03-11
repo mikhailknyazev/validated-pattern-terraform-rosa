@@ -314,6 +314,34 @@ variable "admin_password_override" {
   nullable    = true
 }
 
+##############################################################
+# Proxy variables
+##############################################################
+
+variable "http_proxy" {
+  type        = string
+  default     = null
+  description = "A proxy URL to use for creating HTTP connections outside the cluster. The URL scheme must be http."
+}
+
+variable "https_proxy" {
+  type        = string
+  default     = null
+  description = "A proxy URL to use for creating HTTPS connections outside the cluster."
+}
+
+variable "no_proxy" {
+  type        = string
+  default     = null
+  description = "A comma-separated list of destination domain names, domains, IP addresses or other network CIDRs to exclude proxying."
+}
+
+variable "additional_trust_bundle" {
+  type        = string
+  default     = null
+  description = "A string containing a PEM-encoded X.509 certificate bundle that will be added to the nodes' trusted certificate store."
+}
+
 variable "enable_bastion" {
   description = <<EOF
   Enable bastion host for secure access to private cluster.

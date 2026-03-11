@@ -31,7 +31,7 @@
 #
 # =============================================================================
 
-# cluster_name = "dev-byo-vpc-01"
+cluster_name = "dev-byo-vpc-01"
 
 # Version pinning
 openshift_version = "4.20.12"

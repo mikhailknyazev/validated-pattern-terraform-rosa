@@ -186,6 +186,12 @@ module "cluster" {
   persists_through_sleep         = var.persists_through_sleep
   persists_through_sleep_cluster = var.persists_through_sleep_cluster
 
+  # Proxy variables
+  http_proxy              = var.http_proxy
+  https_proxy             = var.https_proxy
+  no_proxy                = var.no_proxy
+  additional_trust_bundle = var.additional_trust_bundle
+
   # Cluster configuration
   # Note: zero_egress is a cluster-level ROSA API property, independent of network_type
   # However, zero egress typically requires private network (PrivateLink API endpoint)
@@ -256,7 +262,6 @@ module "cluster" {
   default_instance_type = var.default_instance_type
   default_min_replicas  = null # Use module defaults (calculated based on single-AZ vs multi-AZ)
   default_max_replicas  = null # Use module defaults (calculated based on single-AZ vs multi-AZ)
-
   # Additional machine pools - resolved with actual subnet IDs
   additional_machine_pools = {
     for pool_name, pool_config in local.additional_machine_pools_resolved : pool_name => {
