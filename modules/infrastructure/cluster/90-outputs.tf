@@ -124,6 +124,7 @@ output "gitops_bootstrap_hub_values" {
     efs_file_system_id = var.efs_file_system_id != null ? var.efs_file_system_id : (length(aws_efs_file_system.main) > 0 ? aws_efs_file_system.main[0].id : "")
     git_repo_url       = var.gitops_git_repo_url != null ? var.gitops_git_repo_url : ""
     helm_repo_url      = var.helm_repo_url
+    acm_mode           = var.acm_mode
   }) : null
   sensitive = false
 }

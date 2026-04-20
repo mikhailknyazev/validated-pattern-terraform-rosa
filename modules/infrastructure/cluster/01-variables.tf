@@ -590,14 +590,14 @@ variable "helm_chart" {
 variable "helm_chart_version" {
   description = "Helm chart version for cluster bootstrap"
   type        = string
-  default     = "0.5.7"
+  default     = "0.5.12"
   nullable    = false
 }
 
 variable "gitops_csv" {
   description = "Cluster Service Version (CSV) for the GitOps operator"
   type        = string
-  default     = "openshift-gitops-operator.v1.16.0-0.1746014725.p"
+  default     = "openshift-gitops-operator.v1.19.2"
   nullable    = false
 }
 
@@ -696,7 +696,7 @@ variable "helm_chart_acm_spoke" {
 variable "helm_chart_acm_spoke_version" {
   description = "Helm chart version for ACM spoke cluster bootstrap"
   type        = string
-  default     = "0.6.3"
+  default     = "0.6.10"
   nullable    = false
 }
 
@@ -710,7 +710,7 @@ variable "helm_chart_acm_hub_registration" {
 variable "helm_chart_acm_hub_registration_version" {
   description = "Helm chart version for ACM hub registration"
   type        = string
-  default     = "0.1.0"
+  default     = "0.2.1"
   nullable    = false
 }
 

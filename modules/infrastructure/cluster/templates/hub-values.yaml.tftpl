@@ -48,9 +48,9 @@ argocd:
   - name: application-ns
     annotations:
     helmRepoUrl: ${helm_repo_url}
-    chart: app-of-apps-application
+    chart: ${acm_mode == "hub" ? "app-of-apps-acm-team-onboarding" : "app-of-apps-application"}
     project: application-ns-project
-    targetRevision: 1.5.4
+    targetRevision: ${acm_mode == "hub" ? "0.4.1" : "1.5.8"}
     gitRepoUrl: ${git_repo_url}
     adGroup: PFAUTHAD
     gitPathFile: /applications-ns.yaml
@@ -63,9 +63,6 @@ application-gitops:
   name: application-gitops
   gitopsNamespace: application-gitops
   domain: ${cluster_domain}
-  # ArgoCD CR spec.initialRepositories expects a string (YAML/JSON), not array. Empty string works when no repos.
-  argocd:
-    initialRepositories: "[]"
 %{if ecr_account != ""}
 
 helper-installplan-approver:

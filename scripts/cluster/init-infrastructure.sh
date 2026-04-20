@@ -25,36 +25,21 @@ cd "$TERRAFORM_INFRA_DIR"
 # Setup backend config
 if check_backend_config; then
 	# Remote backend (S3)
-	# Use -migrate-state if .terraform exists, otherwise -reconfigure
-	if [ -d ".terraform" ]; then
-		# shellcheck disable=SC2046
-		terraform init -migrate-state -input=false \
-			-backend-config="bucket=${TF_BACKEND_CONFIG_BUCKET}" \
-			-backend-config="key=clusters/${CLUSTER_NAME}/infrastructure.tfstate" \
-			-backend-config="region=${TF_BACKEND_CONFIG_REGION:-us-east-1}" \
-			$(if [ -n "${TF_BACKEND_CONFIG_DYNAMODB_TABLE:-}" ]; then echo "-backend-config=dynamodb_table=${TF_BACKEND_CONFIG_DYNAMODB_TABLE}"; fi) \
-			-backend-config="encrypt=true"
-	else
-		# shellcheck disable=SC2046
-		terraform init -reconfigure -input=false \
-			-backend-config="bucket=${TF_BACKEND_CONFIG_BUCKET}" \
-			-backend-config="key=clusters/${CLUSTER_NAME}/infrastructure.tfstate" \
-			-backend-config="region=${TF_BACKEND_CONFIG_REGION:-us-east-1}" \
-			$(if [ -n "${TF_BACKEND_CONFIG_DYNAMODB_TABLE:-}" ]; then echo "-backend-config=dynamodb_table=${TF_BACKEND_CONFIG_DYNAMODB_TABLE}"; fi) \
-			-backend-config="encrypt=true"
-	fi
+	# Always use -reconfigure: each cluster has its own state key, so switching
+	# clusters is a backend reconfiguration, not a state migration.
+	# shellcheck disable=SC2046
+	terraform init -reconfigure -input=false \
+		-backend-config="bucket=${TF_BACKEND_CONFIG_BUCKET}" \
+		-backend-config="key=clusters/${CLUSTER_NAME}/infrastructure.tfstate" \
+		-backend-config="region=${TF_BACKEND_CONFIG_REGION:-us-east-1}" \
+		$(if [ -n "${TF_BACKEND_CONFIG_DYNAMODB_TABLE:-}" ]; then echo "-backend-config=dynamodb_table=${TF_BACKEND_CONFIG_DYNAMODB_TABLE}"; fi) \
+		-backend-config="encrypt=true"
 else
 	# Local backend
-	# Use -migrate-state if .terraform exists, otherwise -reconfigure
-	# Use absolute path with project root
+	# Always use -reconfigure: each cluster has its own state file path.
 	PROJECT_ROOT=$(get_project_root)
-	if [ -d ".terraform" ]; then
-		terraform init -migrate-state -input=false \
-			-backend-config="path=${PROJECT_ROOT}/clusters/${CLUSTER_NAME}/infrastructure.tfstate"
-	else
-		terraform init -reconfigure -input=false \
-			-backend-config="path=${PROJECT_ROOT}/clusters/${CLUSTER_NAME}/infrastructure.tfstate"
-	fi
+	terraform init -reconfigure -input=false \
+		-backend-config="path=${PROJECT_ROOT}/clusters/${CLUSTER_NAME}/infrastructure.tfstate"
 fi
 
 success "Infrastructure initialized successfully"

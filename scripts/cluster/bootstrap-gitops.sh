@@ -149,29 +149,6 @@ log_into_cluster() {
 
 	echo "Retrieving cluster credentials from AWS Secrets Manager (region: ${region})..."
 
-	# Check if already logged in to the same cluster
-	local current_context
-	current_context=$(oc config current-context 2>/dev/null || echo "")
-	if [[ -n "${current_context}" ]]; then
-		echo "Already logged in to cluster context: ${current_context}"
-		# Verify we can still access the cluster
-		if oc get nodes &>/dev/null; then
-			echo "Cluster access verified, skipping login."
-			# Still need to extract and set CLUSTER_DOMAIN from current context
-			local api_url
-			api_url=$(oc whoami --show-server 2>/dev/null || echo "")
-			if [[ -n "${api_url}" ]]; then
-				local domain
-				domain=$(echo "${api_url}" | awk -F'.' '{print $2"."$3"."$4"."$5"."$6}' | awk -F':' '{print $1}')
-				export CLUSTER_DOMAIN="${domain}"
-				echo "Extracted cluster domain from current context: ${CLUSTER_DOMAIN}"
-			fi
-			return 0
-		else
-			echo "Cluster access lost, re-authenticating..."
-		fi
-	fi
-
 	# Use jq to directly extract values
 	local secret_string
 	secret_string=$(aws secretsmanager get-secret-value \
@@ -289,6 +266,7 @@ install_gitops_hub() {
 	local chart_name="${HELM_CHART:-cluster-bootstrap}"
 	local chart_version="${HELM_CHART_VERSION:-0.5.4}"
 	local namespace="${HELM_NAMESPACE:-openshift-operators}"
+	local helm_timeout="${HELM_TIMEOUT:-15m}"
 
 	echo "=== Installing GitOps for hub/standalone cluster ==="
 
@@ -299,6 +277,7 @@ install_gitops_hub() {
 		"--version" "${chart_version}"
 		"--insecure-skip-tls-verify"
 		"--namespace" "${namespace}"
+		"--timeout" "${helm_timeout}"
 		"--wait"
 		"--wait-for-jobs"
 		"--values" "${BOOTSTRAP_VALUES_FILE}"
@@ -409,6 +388,8 @@ install_gitops_spoke() {
 	# STEP 1: Deploy spoke cluster components first (ArgoCD, storage, etc.)
 	echo "=== STEP 1: Deploying spoke cluster components ==="
 
+	local helm_timeout="${HELM_TIMEOUT:-15m}"
+
 	# Values file from Terraform output (gitops_bootstrap_hub_values or gitops_bootstrap_spoke_values)
 	local helm_args=(
 		"upgrade" "--install" "${chart_name}"
@@ -417,6 +398,7 @@ install_gitops_spoke() {
 		"--insecure-skip-tls-verify"
 		"--create-namespace"
 		"--namespace" "${namespace}"
+		"--timeout" "${helm_timeout}"
 		"--wait"
 		"--wait-for-jobs"
 		"--values" "${BOOTSTRAP_VALUES_FILE}"
@@ -684,19 +666,55 @@ cleanup_acm_spoke() {
 
 	echo "Cleaning up ACM resources for spoke cluster ${CLUSTER_NAME} on hub..."
 
-	# Delete GitOpsCluster (idempotent - ignore if not found)
-	echo "Deleting GitOpsCluster ${CLUSTER_NAME}-gitops..."
+	# Delete GitOpsCluster in openshift-gitops (idempotent - ignore if not found)
+	echo "Deleting GitOpsCluster ${CLUSTER_NAME}-gitops in openshift-gitops..."
 	oc delete gitopscluster "${CLUSTER_NAME}-gitops" -n openshift-gitops --ignore-not-found=true || true
 
-	# Delete ArgoCD cluster secret (idempotent)
-	echo "Deleting ArgoCD cluster secret for ${CLUSTER_NAME}..."
-	oc delete secret -n openshift-gitops \
+	# Delete GitOpsCluster in application-gitops (idempotent - ignore if not found)
+	echo "Deleting GitOpsCluster ${CLUSTER_NAME}-app-gitops in application-gitops..."
+	oc delete gitopscluster "${CLUSTER_NAME}-app-gitops" -n application-gitops --ignore-not-found=true || true
+
+	# Delete ArgoCD cluster secret in openshift-gitops (targeted - only this cluster's secret)
+	echo "Deleting ArgoCD cluster secret for ${CLUSTER_NAME} in openshift-gitops..."
+	oc get secret -n openshift-gitops \
 		-l argocd.argoproj.io/secret-type=cluster \
-		--ignore-not-found=true 2>/dev/null | grep "${CLUSTER_NAME}" || true
+		-o name 2>/dev/null | while read -r secret; do
+		if oc get "$secret" -n openshift-gitops -o jsonpath='{.data.name}' 2>/dev/null | base64 -d 2>/dev/null | grep -q "${CLUSTER_NAME}"; then
+			echo "  Deleting $secret..."
+			oc delete "$secret" -n openshift-gitops --ignore-not-found=true || true
+		fi
+	done
+
+	# Delete ArgoCD cluster secret in application-gitops (targeted - only this cluster's secret)
+	echo "Deleting ArgoCD cluster secret for ${CLUSTER_NAME} in application-gitops..."
+	oc get secret -n application-gitops \
+		-l argocd.argoproj.io/secret-type=cluster \
+		-o name 2>/dev/null | while read -r secret; do
+		if oc get "$secret" -n application-gitops -o jsonpath='{.data.name}' 2>/dev/null | base64 -d 2>/dev/null | grep -q "${CLUSTER_NAME}"; then
+			echo "  Deleting $secret..."
+			oc delete "$secret" -n application-gitops --ignore-not-found=true || true
+		fi
+	done
 
 	# Delete application-manager addon (idempotent)
 	echo "Deleting application-manager addon for ${CLUSTER_NAME}..."
 	oc delete managedclusteraddon application-manager -n "${CLUSTER_NAME}" --ignore-not-found=true || true
+
+	# Delete Placement in application-gitops (idempotent)
+	echo "Deleting Placement ${CLUSTER_NAME} in application-gitops..."
+	oc delete placement "${CLUSTER_NAME}" -n application-gitops --ignore-not-found=true || true
+
+	# Delete ManagedClusterSetBinding in application-gitops (idempotent)
+	echo "Deleting ManagedClusterSetBinding ${CLUSTER_NAME} in application-gitops..."
+	oc delete managedclustersetbinding "${CLUSTER_NAME}" -n application-gitops --ignore-not-found=true || true
+
+	# Delete ManagedClusterSet (idempotent)
+	echo "Deleting ManagedClusterSet ${CLUSTER_NAME}..."
+	oc delete managedclusterset "${CLUSTER_NAME}" --ignore-not-found=true || true
+
+	# Delete acm-placement ConfigMap in application-gitops (idempotent)
+	echo "Deleting ConfigMap acm-placement-${CLUSTER_NAME} in application-gitops..."
+	oc delete configmap "acm-placement-${CLUSTER_NAME}" -n application-gitops --ignore-not-found=true || true
 
 	# Delete ManagedCluster (idempotent)
 	echo "Deleting ManagedCluster ${CLUSTER_NAME}..."
@@ -709,6 +727,10 @@ cleanup_acm_spoke() {
 	# Wait for cleanup to complete
 	echo "Waiting for cleanup to complete..."
 	sleep 10
+
+	# Delete the spoke namespace on the hub (may contain leftover secrets/imports)
+	echo "Deleting hub namespace ${CLUSTER_NAME}..."
+	oc delete namespace "${CLUSTER_NAME}" --ignore-not-found=true || true
 
 	echo "✓ ACM cleanup complete for spoke cluster ${CLUSTER_NAME}."
 }
