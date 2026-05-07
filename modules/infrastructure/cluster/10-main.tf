@@ -72,10 +72,13 @@ locals {
   default_min_replicas_per_pool = var.default_min_replicas != null ? var.default_min_replicas : local.calculated_min_replicas_per_pool
   default_max_replicas_per_pool = var.default_max_replicas != null ? var.default_max_replicas : local.calculated_max_replicas_per_pool
 
-  # hcp_replicas is the total number of replicas across all machine pools (used at cluster level)
-  # For single-AZ: 1 pool with hcp_replicas replicas
-  # For multi-AZ: 3 pools, total = min_replicas_per_pool * 3
-  hcp_replicas = local.is_multi_az ? (local.default_min_replicas_per_pool * local.num_availability_zones) : local.default_min_replicas_per_pool
+  # hcp_replicas / hcp_max_replicas are the TOTAL replica counts across all pools (cluster-level semantics).
+  # rhcs_cluster_rosa_hcp min_replicas / max_replicas are cluster-totals, not per-pool.
+  # rhcs_hcp_machine_pool min_replicas / max_replicas are per-pool (per-AZ for multi-AZ).
+  # For single-AZ: 1 pool, so per-pool == total.
+  # For multi-AZ:  total = per_pool * num_availability_zones.
+  hcp_replicas     = local.is_multi_az ? (local.default_min_replicas_per_pool * local.num_availability_zones) : local.default_min_replicas_per_pool
+  hcp_max_replicas = local.is_multi_az ? (local.default_max_replicas_per_pool * local.num_availability_zones) : local.default_max_replicas_per_pool
 
   # Determine machine pool names - HCP creates one pool per availability zone if multi-AZ
   # Reference: https://github.com/rh-mobb/terraform-rosa/blob/main/04-cluster.tf
@@ -220,8 +223,10 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   # no-op and avoids the CLUSTERS-MGMT-403 race on multi-AZ clusters.
   replicas            = local.autoscaling_enabled ? null : local.hcp_replicas
   autoscaling_enabled = local.autoscaling_enabled
-  min_replicas        = local.autoscaling_enabled ? local.default_min_replicas_per_pool : null
-  max_replicas        = local.autoscaling_enabled ? local.default_max_replicas_per_pool : null
+  # Cluster-level min/max must be the TOTAL across all AZs/pools, not per-pool values.
+  # OCM validates that the total is a multiple of the number of private subnets.
+  min_replicas        = local.autoscaling_enabled ? local.hcp_replicas : null
+  max_replicas        = local.autoscaling_enabled ? local.hcp_max_replicas : null
 
   # EC2 metadata HTTP tokens (required for security)
   ec2_metadata_http_tokens = "required"
