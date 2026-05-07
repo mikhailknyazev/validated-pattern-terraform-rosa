@@ -15,9 +15,10 @@ terraform {
       version = ">= 6.0"
     }
     rhcs = {
-      # Official registry provider - 1.7.4 adds rhcs_log_forwarder support
+      # 1.7.4 adds rhcs_log_forwarder support
+      # 1.7.5 adds autoscaling_enabled / min_replicas / max_replicas day-1 hints on rhcs_cluster_rosa_hcp
       source  = "terraform-redhat/rhcs"
-      version = "~> 1.7.4"
+      version = "~> 1.7.5"
     }
     random = {
       source  = "hashicorp/random"

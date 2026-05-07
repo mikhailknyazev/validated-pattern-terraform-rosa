@@ -209,16 +209,19 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   # Compute machine type (used for default machine pool)
   compute_machine_type = var.default_instance_type
 
-  # Replicas for default machine pool
+  # Replicas / autoscaling hints for the initial default machine pool.
   # Reference: https://github.com/rh-mobb/terraform-rosa/blob/main/04-cluster.tf
-  # NOTE: we are only deriving this because we use the rhcs_hcp_machine_pool.default resource to manage our
-  #       machine pools and we require this input for the cluster.
-  # HCP: if unspecified and multi-az, use 1 per subnet; if unspecified and single-az, use 2
-  # For multi-AZ: hcp_replicas should be the total number (e.g., 3 for 3 subnets with 1 per subnet)
-  # For single-AZ: hcp_replicas should be 2 (minimum for HA)
-  # NOTE: Cluster-level replicas must always be set (even with autoscaling) for validation
-  #       Autoscaling is handled at the machine pool level, not cluster level
-  replicas = local.hcp_replicas
+  # These are write-once attributes: the provider passes them to ROSA at creation time
+  # to configure the default pool(s) immediately, but they become irrelevant once the
+  # cluster exists.  Any subsequent changes must be made through rhcs_hcp_machine_pool.
+  #
+  # Setting autoscaling_enabled + min/max here ensures the default pool is created with
+  # autoscaling already active, so the rhcs_hcp_machine_pool.default reconciliation is a
+  # no-op and avoids the CLUSTERS-MGMT-403 race on multi-AZ clusters.
+  replicas            = local.autoscaling_enabled ? null : local.hcp_replicas
+  autoscaling_enabled = local.autoscaling_enabled
+  min_replicas        = local.autoscaling_enabled ? local.default_min_replicas_per_pool : null
+  max_replicas        = local.autoscaling_enabled ? local.default_max_replicas_per_pool : null
 
   # EC2 metadata HTTP tokens (required for security)
   ec2_metadata_http_tokens = "required"
@@ -252,11 +255,11 @@ resource "rhcs_cluster_rosa_hcp" "main" {
       error_message = "Instance type '${var.default_instance_type}' is not available for ROSA in region '${var.region}'. Use 'terraform console' and run 'data.rhcs_machine_types.available.items' to see available machine types."
     }
 
-    # Validate replicas is a multiple of number of availability zones for multi-AZ clusters
-    # Only validate when destroy is enabled (resource will be created) and multi-AZ is enabled
+    # Validate min_replicas (or replicas when autoscaling is disabled) is a multiple of the
+    # number of availability zones for multi-AZ clusters.
     precondition {
       condition     = local.persists_through_sleep && local.is_multi_az ? (local.hcp_replicas % local.num_availability_zones == 0) : true
-      error_message = "For multi-AZ clusters, replicas (${local.hcp_replicas}) must be a multiple of the number of availability zones (${local.num_availability_zones}). For ${local.num_availability_zones} AZs, use replicas like ${local.num_availability_zones}, ${local.num_availability_zones * 2}, ${local.num_availability_zones * 3}, etc."
+      error_message = "For multi-AZ clusters, ${local.autoscaling_enabled ? "min_replicas per pool (${local.default_min_replicas_per_pool}) gives a total" : "replicas"} (${local.hcp_replicas}) must be a multiple of the number of availability zones (${local.num_availability_zones}). For ${local.num_availability_zones} AZs, use values like ${local.num_availability_zones}, ${local.num_availability_zones * 2}, ${local.num_availability_zones * 3}, etc."
     }
 
     # Validate no name conflicts between default and additional pools

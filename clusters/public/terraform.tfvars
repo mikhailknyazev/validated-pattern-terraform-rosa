@@ -20,9 +20,15 @@ multi_az = false # Single AZ for dev cost savings (availability zones automatica
 
 # Machine Pool Configuration
 default_instance_type = "m5.xlarge" # EC2 instance type for default worker nodes
-# default_min_replicas and default_max_replicas use module defaults:
-# - Single-AZ: min=2, max=4 per pool
-# - Multi-AZ: min=1, max=2 per AZ (each pool gets these values)
+
+# Default pool autoscaling — values are passed as day-1 creation hints to the cluster resource
+# (autoscaling_enabled / min_replicas / max_replicas on rhcs_cluster_rosa_hcp) so the default
+# pool is created with autoscaling active from the start, eliminating the CLUSTERS-MGMT-403
+# race on subsequent rhcs_hcp_machine_pool reconciliation.
+# For single-AZ: values are per-pool.
+# For multi-AZ:  values are per-AZ (each of the 3 pools gets these bounds).
+default_min_replicas = 2 # single-AZ minimum for HA
+default_max_replicas = 4 # allow the default pool to grow up to 2× the minimum
 
 # GitOps Bootstrap
 enable_gitops_bootstrap = true # Enable GitOps operator installation after cluster creation

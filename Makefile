@@ -110,14 +110,14 @@ help: ## Show this help message
 	@echo "        When persists_through_sleep=false, cluster is put to sleep (resources destroyed)"
 
 # Terraform targets
-tf-fmt: ## Format all Terraform files
+tf-fmt: ## Format all Terraform files (excludes reference/)
 	@echo "$(BLUE)Formatting Terraform files...$(NC)"
-	terraform fmt -recursive
+	terraform fmt -recursive modules/ terraform/ clusters/
 	@echo "$(GREEN)✓ Terraform files formatted$(NC)"
 
-tf-fmt-check: ## Check Terraform formatting (does not modify files)
+tf-fmt-check: ## Check Terraform formatting (does not modify files, excludes reference/)
 	@echo "$(BLUE)Checking Terraform formatting...$(NC)"
-	@if terraform fmt -check -recursive; then \
+	@if terraform fmt -check -recursive modules/ terraform/ clusters/; then \
 		echo "$(GREEN)✓ All Terraform files are properly formatted$(NC)"; \
 	else \
 		echo "$(RED)✗ Some Terraform files need formatting. Run 'make tf-fmt' to fix.$(NC)"; \
