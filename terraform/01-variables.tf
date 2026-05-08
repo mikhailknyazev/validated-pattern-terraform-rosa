@@ -579,3 +579,10 @@ variable "enable_timing" {
   default     = false
   nullable    = false
 }
+
+variable "additional_cluster_properties" {
+  description = "Additional key/value properties to merge into the ROSA HCP cluster resource's properties block. Merged after built-in properties (rosa_creator_arn, zero_egress), so values here take precedence. Use to pass custom OCM cluster properties not exposed as dedicated variables."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+}

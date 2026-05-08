@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Cluster module — `additional_cluster_properties` variable**: New `additional_cluster_properties` variable (`map(string)`, default `{}`) allows callers to inject arbitrary key/value pairs into the `rhcs_cluster_rosa_hcp` resource's `properties` block. The values are merged after the built-in properties (`rosa_creator_arn`, `zero_egress`), so caller-supplied entries take precedence. Available in both the cluster module (`modules/infrastructure/cluster/`) and the root module (`terraform/`).
+
 ### Fixed
 - **Client VPN config path wrong directory**: VPN .ovpn files were written to `clusters/${cluster_name}/` instead of `clusters/${directory}/`. Added `cluster_config_dir` variable; plan script now passes `-var "cluster_config_dir=$CLUSTER_NAME"` so output path matches the Makefile cluster directory (e.g., `egress-zero`).
 - **Client VPN connection instructions path format**: Instructions now show path relative to project root (`./clusters/<cluster-dir>/<name>-vpn-client.ovpn`) instead of terraform-relative path. Added `client_config_display_path` to module; root outputs use constructed path.

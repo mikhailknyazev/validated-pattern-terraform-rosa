@@ -100,11 +100,13 @@ locals {
   # Cluster properties
   # Reference: https://github.com/rh-mobb/terraform-rosa/blob/main/04-cluster.tf
   # zero_egress property is set when zero_egress variable is true
+  # additional_cluster_properties are merged last so callers can override or extend
   cluster_properties = merge(
     {
       rosa_creator_arn = data.aws_caller_identity.current.arn
     },
-    var.zero_egress ? { "zero_egress" = "true" } : {}
+    var.zero_egress ? { "zero_egress" = "true" } : {},
+    var.additional_cluster_properties
   )
 
   # Additional machine pools validation
@@ -225,8 +227,8 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   autoscaling_enabled = local.autoscaling_enabled
   # Cluster-level min/max must be the TOTAL across all AZs/pools, not per-pool values.
   # OCM validates that the total is a multiple of the number of private subnets.
-  min_replicas        = local.autoscaling_enabled ? local.hcp_replicas : null
-  max_replicas        = local.autoscaling_enabled ? local.hcp_max_replicas : null
+  min_replicas = local.autoscaling_enabled ? local.hcp_replicas : null
+  max_replicas = local.autoscaling_enabled ? local.hcp_max_replicas : null
 
   # EC2 metadata HTTP tokens (required for security)
   ec2_metadata_http_tokens = "required"

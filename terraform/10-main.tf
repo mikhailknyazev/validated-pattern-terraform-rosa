@@ -302,6 +302,8 @@ module "cluster" {
   #   "192.168.1.0/24"   # Example: VPN range or Transit Gateway connected VPC CIDR
   # ]
 
+  additional_cluster_properties = var.additional_cluster_properties
+
   tags = var.tags
 
   # CRITICAL: Explicit dependency ensures cluster is destroyed BEFORE IAM during destroy
