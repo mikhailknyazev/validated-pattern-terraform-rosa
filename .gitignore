@@ -68,3 +68,6 @@ scratch/
 
 # Generated bootstrap values (Terraform output, same dir as tfvars)
 clusters/*/cluster-bootstrap-values.yaml
+
+kubeconfig
+values.generated.yaml
