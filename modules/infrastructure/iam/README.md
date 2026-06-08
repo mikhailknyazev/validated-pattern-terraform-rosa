@@ -66,7 +66,7 @@ module "iam" {
 |------|---------|
 | terraform | >= 1.5.0 |
 | aws | ~> 5.0 |
-| rhcs | ~> 1.7 |
+| rhcs | 1.7.7-prerelease.6 |
 
 ## Inputs
 

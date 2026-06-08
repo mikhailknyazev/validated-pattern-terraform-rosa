@@ -87,6 +87,44 @@ variable "default_instance_type" {
   nullable    = false
 }
 
+variable "default_labels" {
+  description = "Labels to apply to all default machine pool nodes. Applied to all default pools (workers, workers-0/1/2 for multi-AZ)."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+}
+
+variable "default_taints" {
+  description = "Taints to apply to all default machine pool nodes. schedule_type must be one of: NoSchedule, PreferNoSchedule, NoExecute."
+  type = list(object({
+    key           = string
+    value         = string
+    schedule_type = string
+  }))
+  default  = []
+  nullable = false
+}
+
+variable "default_min_replicas" {
+  description = <<-EOF
+    Default minimum replicas per default machine pool. If null, the cluster module calculates bounds (single-AZ: 2 per pool; multi-AZ: 1 per AZ per pool).
+    For multi-AZ, this is per pool (per AZ), not cluster total.
+  EOF
+  type        = number
+  default     = null
+  nullable    = true
+}
+
+variable "default_max_replicas" {
+  description = <<-EOF
+    Default maximum replicas per default machine pool. If null, the cluster module calculates bounds (single-AZ: 4 per pool; multi-AZ: 2 per AZ per pool).
+    For multi-AZ, this is per pool (per AZ), not cluster total.
+  EOF
+  type        = number
+  default     = null
+  nullable    = true
+}
+
 # Production variables (optional, typically used with egress-zero)
 variable "kms_key_arn" {
   description = "KMS key ARN for encryption (legacy - KMS keys are now created in IAM module)"
@@ -107,6 +145,20 @@ variable "etcd_encryption" {
   type        = bool
   default     = false
   nullable    = false
+}
+
+variable "enable_autonode" {
+  description = "Enable ROSA HCP AutoNode (Karpenter): IAM policy/IRSA in the iam module, rhcs_cluster_rosa_hcp auto_node block, and subnet/SG discovery tags in the cluster module. See clusters README for preview constraints. OCM cannot disable AutoNode after enable—avoid toggling false on existing clusters."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "autonode_kubernetes_cluster_tag_id" {
+  description = "Optional explicit override for IAM policy conditions kubernetes.io/cluster/<id> used by the AutoNode controller policy. Null uses bootstrap mode on first apply and automatic cluster ID discovery/tightening on subsequent applies."
+  type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "enable_audit_logging" {
@@ -525,6 +577,13 @@ variable "gitops_git_repo_url" {
   type        = string
   default     = null
   nullable    = true
+}
+
+variable "gitops_git_target_revision" {
+  description = "Git target revision (branch/tag/commit) for cluster-config repository used by ArgoCD value source. Defaults to HEAD (default branch)."
+  type        = string
+  default     = "HEAD"
+  nullable    = false
 }
 
 variable "gitops_git_path" {

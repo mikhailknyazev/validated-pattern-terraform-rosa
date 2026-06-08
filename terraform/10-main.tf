@@ -155,6 +155,9 @@ module "iam" {
   aws_private_ca_arn         = var.aws_private_ca_arn
   additional_secrets         = var.additional_secrets
 
+  enable_autonode                    = var.enable_autonode
+  autonode_kubernetes_cluster_tag_id = var.autonode_kubernetes_cluster_tag_id
+
   # Control plane log forwarding (new ROSA managed log forwarder)
   enable_control_plane_log_forwarding         = var.enable_control_plane_log_forwarding
   control_plane_log_cloudwatch_enabled        = var.control_plane_log_cloudwatch_enabled
@@ -241,8 +244,9 @@ module "cluster" {
   ebs_kms_key_arn    = module.iam.ebs_kms_key_arn # Use IAM module's KMS key
   efs_file_system_id = null                       # Will use cluster module's created EFS
   # GitOps repository configuration
-  git_path            = var.gitops_git_path
-  gitops_git_repo_url = var.gitops_git_repo_url
+  git_path                   = var.gitops_git_path
+  gitops_git_repo_url        = var.gitops_git_repo_url
+  gitops_git_target_revision = var.gitops_git_target_revision
 
   # Termination Protection (IAM resources are in IAM module)
   enable_termination_protection = var.enable_termination_protection
@@ -260,6 +264,8 @@ module "cluster" {
   # - Single-AZ: min = 2, max = 4
   # - Multi-AZ: min = 3, max = 6
   default_instance_type = var.default_instance_type
+  default_labels        = var.default_labels
+  default_taints        = var.default_taints
   default_min_replicas  = null # Use module defaults (calculated based on single-AZ vs multi-AZ)
   default_max_replicas  = null # Use module defaults (calculated based on single-AZ vs multi-AZ)
   # Additional machine pools - resolved with actual subnet IDs
@@ -287,7 +293,6 @@ module "cluster" {
     }
   }
 
-  # Zero-egress specific settings
   # Zero-egress clusters may take longer for nodes to start due to network connectivity
   # Set to false to allow cluster creation to complete even if nodes are still starting
   # Note: Based on zero_egress property directly, independent of network_type
@@ -301,6 +306,9 @@ module "cluster" {
   #   "10.0.0.0/32",      # Example: Specific IP (e.g., bastion host via SSM Session Manager)
   #   "192.168.1.0/24"   # Example: VPN range or Transit Gateway connected VPC CIDR
   # ]
+
+  enable_autonode       = var.enable_autonode
+  autonode_iam_role_arn = module.iam.autonode_role_arn
 
   additional_cluster_properties = var.additional_cluster_properties
 

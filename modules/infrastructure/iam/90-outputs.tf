@@ -119,3 +119,15 @@ output "control_plane_log_forwarding_role_arn" {
   value       = length(aws_iam_role.control_plane_log_forwarding) > 0 ? aws_iam_role.control_plane_log_forwarding[0].arn : null
   sensitive   = false
 }
+
+output "autonode_policy_arn" {
+  description = "ARN of the AutoNode (Karpenter) controller IAM policy (null if enable_autonode is false)"
+  value       = length(aws_iam_policy.autonode) > 0 ? aws_iam_policy.autonode[0].arn : null
+  sensitive   = false
+}
+
+output "autonode_role_arn" {
+  description = "ARN of the AutoNode (Karpenter) IRSA IAM role (null if enable_autonode is false)"
+  value       = length(aws_iam_role.autonode_operator) > 0 ? aws_iam_role.autonode_operator[0].arn : null
+  sensitive   = false
+}

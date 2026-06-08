@@ -110,6 +110,22 @@ variable "enable_secrets_manager_iam" {
   nullable    = false
 }
 
+variable "enable_autonode" {
+  description = "Create Karpenter IAM policy and IRSA role for AutoNode (ROSA HCP). Policy conditions use kubernetes.io/cluster/<suffix>; default suffix is cluster_name—set autonode_kubernetes_cluster_tag_id if ROSA tags use another ID."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+# Optional ROSA infra / OCM identifier for IAM policy conditions kubernetes.io/cluster/<id>.
+# Defaults to cluster_name (same as other ROSA patterns in this repo). Set if instance/subnet tags use a different value.
+variable "autonode_kubernetes_cluster_tag_id" {
+  description = "Optional explicit cluster identifier string for kubernetes.io/cluster/<id> IAM policy conditions when enable_autonode is true. Null enables bootstrap mode on first apply and then automatic ID discovery/tightening on subsequent applies."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "aws_private_ca_arn" {
   description = "AWS Private CA ARN for cert-manager (optional)"
   type        = string

@@ -238,6 +238,14 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   # Properties are constructed in locals.cluster_properties for better readability and maintainability
   properties = local.cluster_properties
 
+  # AutoNode (Karpenter): nested attribute on rhcs_cluster_rosa_hcp (not a block). OCM does not allow
+  # removing it once enabled—do not set enable_autonode=false on existing clusters without vendor guidance.
+  # Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/resources/cluster_rosa_hcp#auto_node
+  auto_node = var.enable_autonode ? {
+    mode     = "enabled"
+    role_arn = var.autonode_iam_role_arn
+  } : null
+
   # Lifecycle settings
   disable_waiting_in_destroy          = false
   wait_for_create_complete            = true
@@ -361,6 +369,10 @@ resource "rhcs_hcp_machine_pool" "default" {
     ) : "required" # Default to "required" to match cluster-level setting
     tags = local.common_tags
   }
+
+  # Only set labels/taints if they have values (provider requires at least 1 element if provided)
+  labels = length(var.default_labels) > 0 ? var.default_labels : null
+  taints = length(var.default_taints) > 0 ? var.default_taints : null
 
   # CRITICAL: Default machine pools are managed by Terraform for configuration (autoscaling, instance type, etc.)
   # but should NOT be deleted by Terraform during destroy. ROSA automatically deletes default machine pools
