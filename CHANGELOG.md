@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Enablement guide** (`docs/ENABLEMENT.md`): Comprehensive implementation guide for the three-repository ROSA HCP pattern — repository rehoming, Helm chart publishing, end-to-end deployment runbook, ACM hub/spoke, network topology decisions, CI/CD integration, and troubleshooting (18 mermaid diagrams)
+- **Enablement guide — OCM service accounts**: Recommends Hybrid Cloud Console service accounts for cluster provisioning (avoid tying clusters to individual users); documents post-creation notification contacts and User Access configuration
+- **Enablement guide — composable tfvars**: Documents that example cluster directories are reference recipes, not exclusive topologies; clusters combine dimensions (BYO VPC + egress-zero + AutoNode, etc.) in a single `terraform.tfvars`
 - **Cluster module — `additional_cluster_properties` variable**: New `additional_cluster_properties` variable (`map(string)`, default `{}`) allows callers to inject arbitrary key/value pairs into the `rhcs_cluster_rosa_hcp` resource's `properties` block. The values are merged after the built-in properties (`rosa_creator_arn`, `zero_egress`), so caller-supplied entries take precedence. Available in both the cluster module (`modules/infrastructure/cluster/`) and the root module (`terraform/`).
 
 ### Changed

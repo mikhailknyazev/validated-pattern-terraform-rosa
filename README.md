@@ -820,6 +820,7 @@ This allows sleeping the cluster while preserving IAM roles and OIDC configurati
 
 ## Documentation
 
+- **[docs/ENABLEMENT.md](docs/ENABLEMENT.md)** - Implementation guide for the three-repository pattern (infrastructure, cluster-config, Helm charts)
 - **[PLAN.md](PLAN.md)** - Detailed implementation plan and architecture decisions
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
 - **[docs/TODO.md](docs/TODO.md)** - Tracking of features from reference implementations
