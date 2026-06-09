@@ -140,6 +140,36 @@ check_api_server_ready() {
 	done
 }
 
+# --- Wait for worker nodes to be Ready ---
+# Pre-install Helm hooks (e.g. installplan-approver) schedule on workers; bootstrap must not
+# run until enough workers exist or those Jobs fail with FailedScheduling.
+wait_for_worker_nodes() {
+	local min_workers="${1:-${MIN_READY_WORKERS:-2}}"
+	local max_attempts="${2:-${WORKER_READY_MAX_ATTEMPTS:-40}}"
+	local sleep_time="${3:-${WORKER_READY_SLEEP:-30}}"
+
+	echo "Waiting for at least ${min_workers} Ready worker node(s)..."
+
+	local i=1
+	while [[ $i -le $max_attempts ]]; do
+		local ready_count
+		ready_count=$(oc get nodes -l node-role.kubernetes.io/worker -o json 2>/dev/null |
+			jq '[.items[] | select(.status.conditions[]? | select(.type == "Ready" and .status == "True"))] | length')
+
+		if [[ "${ready_count}" -ge "${min_workers}" ]]; then
+			echo "✓ ${ready_count} worker node(s) Ready (required: ${min_workers}, attempt ${i}/${max_attempts})."
+			return 0
+		fi
+
+		echo "Worker nodes not ready yet: ${ready_count}/${min_workers} Ready (attempt ${i}/${max_attempts}). Waiting ${sleep_time} seconds..."
+		if [[ $i -ge $max_attempts ]]; then
+			bad_exit "Timed out waiting for ${min_workers} Ready worker node(s) after ${max_attempts} attempts ($((max_attempts * sleep_time))s total). Last count: ${ready_count}."
+		fi
+		((i++))
+		sleep "${sleep_time}"
+	done
+}
+
 # --- Log into cluster function ---
 log_into_cluster() {
 	local credentials="${1}"
@@ -764,6 +794,9 @@ main() {
 
 	# Log into cluster
 	log_into_cluster "${CREDENTIALS_SECRET}" "${AWS_REGION}"
+
+	# Worker nodes must exist before Helm pre-install hooks run (installplan-approver Job)
+	wait_for_worker_nodes
 
 	# Setup Helm repository
 	setup_helm_repo

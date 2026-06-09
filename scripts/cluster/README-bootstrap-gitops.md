@@ -139,6 +139,9 @@ Values for Git repository, AWS resources, storage, and GitOps operator CSV are n
 |----------|-------------|---------|
 | `GIT_PATH` | Git path for environment (e.g., `nonprod/np-ai-1`) - used for ACM spoke hub registration | - |
 | `ENABLE` | Enable bootstrap (`true`) or cleanup (`false`) | `true` |
+| `MIN_READY_WORKERS` | Minimum Ready worker nodes required before Helm install | `2` |
+| `WORKER_READY_MAX_ATTEMPTS` | Poll attempts while waiting for workers | `40` |
+| `WORKER_READY_SLEEP` | Seconds between worker readiness polls | `30` |
 
 ## Cluster Credentials Secret Format
 

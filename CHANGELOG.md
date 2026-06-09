@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed `lifecycle { ignore_changes = [auto_node] }` workaround from `rhcs_cluster_rosa_hcp`
 
 ### Fixed
+- **GitOps bootstrap before workers ready**: Bootstrap now waits for at least two Ready worker nodes after cluster login and before Helm install. Pre-install hooks (e.g. `installplan-approver`) schedule on workers; running bootstrap immediately after `terraform apply` caused `FailedScheduling: no nodes available` and a failed Helm release.
 - **Client VPN config path wrong directory**: VPN .ovpn files were written to `clusters/${cluster_name}/` instead of `clusters/${directory}/`. Added `cluster_config_dir` variable; plan script now passes `-var "cluster_config_dir=$CLUSTER_NAME"` so output path matches the Makefile cluster directory (e.g., `egress-zero`).
 - **Client VPN connection instructions path format**: Instructions now show path relative to project root (`./clusters/<cluster-dir>/<name>-vpn-client.ovpn`) instead of terraform-relative path. Added `client_config_display_path` to module; root outputs use constructed path.
 - **ArgoCD application-gitops invalid initialRepositories**: application-gitops subchart passed `null` to ArgoCD CR `spec.initialRepositories` when not set, causing validation error. The API expects a string (YAML/JSON), not array. Set `application-gitops.argocd.initialRepositories: "[]"` in hub-values template.
