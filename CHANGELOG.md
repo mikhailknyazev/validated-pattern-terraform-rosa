@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated in root `terraform/00-providers.tf` and cluster/iam module `00-versions.tf`
   - Removed `lifecycle { ignore_changes = [auto_node] }` workaround from `rhcs_cluster_rosa_hcp`
 
+### Changed
+- **GitOps bootstrap defaultImage**: Reverted global `defaultImage: openshift/cli` in hub/spoke bootstrap templates. That change (from autonode PR #17) applied to all clusters but was intended only for ARM testing; it removed bundled helm from the CMP sidecar and broke plugin-based Argo CD apps. Chart default (`quay.io/gnunn/tools:latest`, amd64) is restored.
+
 ### Fixed
 - **GitOps bootstrap before workers ready**: Bootstrap now waits for at least two Ready worker nodes after cluster login and before Helm install. Pre-install hooks (e.g. `installplan-approver`) schedule on workers; running bootstrap immediately after `terraform apply` caused `FailedScheduling: no nodes available` and a failed Helm release.
 - **Client VPN config path wrong directory**: VPN .ovpn files were written to `clusters/${cluster_name}/` instead of `clusters/${directory}/`. Added `cluster_config_dir` variable; plan script now passes `-var "cluster_config_dir=$CLUSTER_NAME"` so output path matches the Makefile cluster directory (e.g., `egress-zero`).
