@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cluster module — `additional_cluster_properties` variable**: New `additional_cluster_properties` variable (`map(string)`, default `{}`) allows callers to inject arbitrary key/value pairs into the `rhcs_cluster_rosa_hcp` resource's `properties` block. The values are merged after the built-in properties (`rosa_creator_arn`, `zero_egress`), so caller-supplied entries take precedence. Available in both the cluster module (`modules/infrastructure/cluster/`) and the root module (`terraform/`).
 
 ### Changed
-- **RHCS provider**: Pinned to `1.7.7-prerelease.6` (OCM-25158 AutoNode fix — post-create PATCH and state reconciliation for `auto_node`)
+- **RHCS provider**: Updated to `~> 1.7.7` (OCM-25158 AutoNode fix — post-create PATCH and state reconciliation for `auto_node`)
   - Updated in root `terraform/00-providers.tf` and cluster/iam module `00-versions.tf`
   - Removed `lifecycle { ignore_changes = [auto_node] }` workaround from `rhcs_cluster_rosa_hcp`
 

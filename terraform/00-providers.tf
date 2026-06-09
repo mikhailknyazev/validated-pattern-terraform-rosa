@@ -15,9 +15,9 @@ terraform {
       version = ">= 6.0"
     }
     rhcs = {
-      # 1.7.4 adds rhcs_log_forwarder; 1.7.7-prerelease.6 fixes AutoNode state (OCM-25158)
+      # 1.7.7 adds AutoNode state fix (OCM-25158)
       source  = "terraform-redhat/rhcs"
-      version = "1.7.7-prerelease.6"
+      version = "~> 1.7.7"
     }
     random = {
       source  = "hashicorp/random"
