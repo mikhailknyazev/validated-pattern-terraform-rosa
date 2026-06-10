@@ -54,8 +54,24 @@ verify "oc version --client"
 verify "helm version --short"
 verify "argocd-vault-plugin version"
 verify "jq --version"
+verify "find --version"
+verify "git --version"
 
-echo "==> CMP helm render (helm template)"
+echo "==> CMP plugin discover (same command as avp-helm sidecar)"
+"${CONTAINER_CMD}" run --rm --platform "${PLATFORM}" "${IMAGE}" \
+	bash -c 'set -euo pipefail
+mkdir -p /tmp/chart/templates
+cat > /tmp/chart/Chart.yaml <<EOF
+apiVersion: v2
+name: smoke
+version: 0.1.0
+EOF
+cat > /tmp/chart/values.yaml <<EOF
+enabled: true
+EOF
+cd /tmp/chart
+sh -c "find . -name '\''Chart.yaml'\'' && find . -name '\''values.yaml'\''"
+'
 "${CONTAINER_CMD}" run --rm --platform "${PLATFORM}" "${IMAGE}" \
 	bash -c 'set -euo pipefail
 mkdir -p /tmp/chart/templates
