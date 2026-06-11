@@ -294,7 +294,7 @@ setup_helm_repo() {
 # --- Install GitOps for hub/standalone cluster ---
 install_gitops_hub() {
 	local chart_name="${HELM_CHART:-cluster-bootstrap}"
-	local chart_version="${HELM_CHART_VERSION:-0.5.4}"
+	local chart_version="${HELM_CHART_VERSION:-0.5.15}"
 	local namespace="${HELM_NAMESPACE:-openshift-operators}"
 	local helm_timeout="${HELM_TIMEOUT:-15m}"
 
@@ -387,7 +387,7 @@ install_gitops_hub() {
 # --- Install GitOps for spoke cluster ---
 install_gitops_spoke() {
 	local chart_name="${HELM_CHART_ACM_SPOKE:-cluster-bootstrap-acm-spoke}"
-	local chart_version="${HELM_CHART_ACM_SPOKE_VERSION:-0.6.3}"
+	local chart_version="${HELM_CHART_ACM_SPOKE_VERSION:-0.6.11}"
 	local namespace="${HELM_NAMESPACE:-openshift-operators}"
 
 	echo "=== Installing GitOps for ACM spoke cluster ==="

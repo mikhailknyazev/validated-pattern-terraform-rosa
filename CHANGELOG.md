@@ -14,22 +14,199 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Enablement guide — composable tfvars**: Documents that example cluster directories are reference recipes, not exclusive topologies; clusters combine dimensions (BYO VPC + egress-zero + AutoNode, etc.) in a single `terraform.tfvars`
 - **Cluster module — `additional_cluster_properties` variable**: New `additional_cluster_properties` variable (`map(string)`, default `{}`) allows callers to inject arbitrary key/value pairs into the `rhcs_cluster_rosa_hcp` resource's `properties` block. The values are merged after the built-in properties (`rosa_creator_arn`, `zero_egress`), so caller-supplied entries take precedence. Available in both the cluster module (`modules/infrastructure/cluster/`) and the root module (`terraform/`).
 
+- **AWS Client VPN** (`enable_client_vpn`): Terraform module for robust private cluster access
+  - Creates AWS Client VPN endpoint in VPC with mutual TLS authentication
+  - Generates `.ovpn` config for OpenVPN, AWS VPN Client, or Tunnelblick
+  - Recommended over sshuttle/bastion for cross-platform reliability
+  - Single subnet by default (~$108/mo); configurable for multi-subnet HA
+  - New variables: `enable_client_vpn`, `vpn_client_cidr_block`, `vpn_split_tunnel`, `vpn_session_timeout_hours`
+  - Makefile targets: `vpn-config.<cluster>` (config path/instructions), `vpn-start.<cluster>`, `vpn-stop.<cluster>`, `vpn-status.<cluster>` for OpenVPN tunnel control
+  - `ensure-tunnel` starts OpenVPN automatically when Client VPN is deployed (bootstrap/login)
+- **BYO VPC Support** (`network_type = "existing"`): Deploy clusters into an existing VPC without running any network module
+  - New variables: `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids`
+  - Root module uses data sources to look up subnets and constructs synthetic `local.network` object
+  - No network module invocation—user creates VPC, subnets, VPC endpoints, and NAT gateways before Terraform
+  - Documentation references `rosa create network` (ROSA CLI v1.2.48+) as a quick way to create compliant networking
+  - New example: `clusters/byo-vpc/terraform.tfvars` with prerequisite documentation
+
+- **Termination Protection**: Added cluster termination protection feature
+  - New variable `enable_termination_protection` (default: `false`) in cluster module
+  - Creates `shell_script` resource that uses ROSA CLI to enable/disable delete protection
+  - Prevents accidental cluster deletion via ROSA CLI
+  - Note: Disabling protection requires manual action via OCM console (cannot be done via CLI)
+  - Script: `scripts/cluster/termination-protection.sh`
+  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/13.termination-protection.tf`
+- **ETCD KMS Key**: Added dedicated KMS key for etcd encryption
+  - Creates `aws_kms_key.etcd` resource when `enable_storage = true` and `etcd_encryption = true`
+  - KMS key persists through sleep operations (like EBS/EFS keys)
+  - Cluster resource automatically uses etcd KMS key ARN when `etcd_encryption = true`
+  - New outputs: `etcd_kms_key_id` and `etcd_kms_key_arn`
+  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/1.main.tf:5-12`
+- **Cert Manager IAM Roles**: Added IAM role and policy for cert-manager to use AWS Private CA
+  - New variable `enable_cert_manager_iam` (default: `false`) in cluster module
+  - Creates IAM role for `cert-manager:cert-manager` service account
+  - IAM policy grants AWS Private CA permissions (`acm-pca:DescribeCertificateAuthority`, `acm-pca:GetCertificate`, `acm-pca:IssueCertificate`)
+  - Bootstrap script updated to use `CERT_MANAGER_ROLE_ARN` environment variable from Terraform output
+  - New output `cert_manager_role_arn` exposes IAM role ARN
+  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/6.cert-manager.tf`
+- **Secrets Manager IAM Integration**: Added IAM role and policy for ArgoCD Vault Plugin to access AWS Secrets Manager
+  - New variable `enable_secrets_manager_iam` (default: `false`) in cluster module
+  - New variable `additional_secrets` (optional list of secret names) for granting access to additional secrets
+  - Creates IAM role for `openshift-gitops:vplugin` service account
+  - IAM policy uses explicit secret ARN list for security (not wildcards)
+  - Cluster credentials secret automatically included in policy
+  - Additional secrets looked up by name via data sources to get exact ARNs
+  - New output `secrets_manager_role_arn` exposes IAM role ARN
+  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/3.secrets.tf`
+- **CloudWatch Logging for OpenShift Logging Operator**: Added IAM role and policy for OpenShift Logging Operator to send logs to CloudWatch
+  - New variable `enable_cloudwatch_logging` (default: `false`) in cluster module
+  - Creates IAM role for `openshift-logging:logging` service account (used by ClusterLogForwarder)
+  - IAM policy grants CloudWatch Logs permissions (CreateLogGroup, CreateLogStream, PutLogEvents, etc.)
+  - New output `cloudwatch_logging_role_arn` exposes IAM role ARN
+  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/4.logging.tf`
+
+- **DNS Domain Registration**: Added DNS domain registration using `rhcs_dns_domain` resource with feature toggle:
+  - New `enable_persistent_dns_domain` variable in cluster module (default: `false`) controls DNS domain registration
+  - When enabled, creates `rhcs_dns_domain` resource in cluster module that persists between cluster creations (not gated by `persists_through_sleep`)
+  - DNS domain resource is created and managed within the cluster module for better encapsulation
+  - When disabled, ROSA uses default DNS domain
+  - Infrastructure files pass the toggle to the cluster module
+  - Reference implementation: `./reference/rosa-hcp-dedicated-vpc/terraform/1.main.tf:17-19`
+- **CloudWatch Audit Log Forwarding**: Added CloudWatch audit log forwarding as a toggleable feature (enabled by default):
+  - New `enable_audit_logging` variable (default: `true`) in cluster module
+  - Creates IAM role and policy for CloudWatch audit log forwarding
+  - IAM role uses OIDC federation for OpenShift logging service account (`system:serviceaccount:openshift-logging:cluster-logging`)
+  - New output `cloudwatch_audit_logging_role_arn` provides the role ARN for cluster configuration
+  - Configuration file: `modules/infrastructure/cluster/20-audit-logging.tf`
+  - Reference implementation: `./reference/rosa-hcp-dedicated-vpc/terraform/4.logging.tf`
+  - Note: Cluster configuration via OCM API or rosa CLI may be required depending on provider version
+  - **DEPRECATED**: Use `enable_control_plane_log_forwarding` instead for the new ROSA managed log forwarder
+- **API Endpoint Security Group Access**: Added optional `api_endpoint_allowed_cidrs` variable to cluster module:
+  - Allows specifying additional IPv4 CIDR blocks to access the ROSA HCP API endpoint
+  - By default, the VPC endpoint security group only allows access from within the VPC
+  - Useful for allowing access from VPN ranges, bastion hosts, or other VPCs
+  - Automatically finds the ROSA-managed VPC endpoint security group by tag name
+  - Creates ingress rules for each specified CIDR block (port 443/TCP)
+  - Only creates resources when CIDRs are provided and `persists_through_sleep` is true
+  - Reference implementation: `reference/rosa-hcp-dedicated-vpc/terraform/2.expose-api.tf`
+- **Machine Pool Management**: Added support for additional custom machine pools beyond default pools:
+  - New `additional_machine_pools` variable in cluster module for creating custom pools
+  - Support for advanced features: taints, labels, kubelet configs, tuning configs, version pinning
+  - Support for AWS features: capacity reservations, additional security groups, custom disk size
+  - New outputs: `default_machine_pools`, `additional_machine_pools`, `all_machine_pools`
+  - Validation to prevent name conflicts between default and additional pools
+  - Validation for subnet IDs, instance types, and autoscaling configuration
+  - Uses `for_each` pattern for stable resource addressing
+  - Reference implementation: `./reference/rosa-hcp-dedicated-vpc/terraform/1.main.tf:212-233`
+
+- **Sleep Protection Pattern**: Implemented `persists_through_sleep` pattern to prevent accidental resource destruction:
+  - Global `persists_through_sleep` variable (default: `true`) controls all resources by default
+  - Per-resource override variables: `persists_through_sleep_cluster`, `persists_through_sleep_iam`, `persists_through_sleep_network`
+  - When `persists_through_sleep = true`, resources are active and managed by Terraform
+  - To sleep cluster: Set `persists_through_sleep = false`, run `terraform apply` (resources are destroyed but essential metadata preserved)
+  - OIDC configuration and provider are never gated (preserved for reuse across clusters)
+  - Subnet tags in `network-existing` module are never gated (read-only, managed by ROSA)
+  - All modules updated: cluster, IAM, network (public/private/egress-zero), bastion
+  - All example clusters updated with `persists_through_sleep = true` by default
+  - Module outputs updated to handle conditional resources (return null when slept)
+  - Example cluster module calls updated to use `try()` for conditional dependencies
+  - Comprehensive documentation added to README.md with usage examples and workflow
+  - Resources tagged with `persists_through_sleep = "true"` tag to indicate they persist through sleep operations
+  - Designed for enterprise environments with strict change control and permission constraints
+
+- Created gitops module (`modules/configuration/gitops/`) for deploying OpenShift GitOps operator:
+  - Deploys OpenShift GitOps operator (ArgoCD) via OperatorHub using oc CLI
+  - Uses terraform_data with local-exec provisioner to avoid Kubernetes provider interpolation issues
+  - Configurable operator channel, source, and install plan approval
+  - Waits for operator installation to complete and verifies deployment
+  - Supports custom namespace configuration
+  - Handles cluster authentication via oc CLI
+  - Comprehensive error handling and timeout configuration
+  - Full documentation with usage examples and troubleshooting guide
+
+- Added identity provider support to cluster module:
+  - HTPasswd identity provider for admin user (optional, via `admin_password`)
+  - Group membership to add admin user to cluster-admins group
+  - Configurable admin username and group
+- Added `admin_password` variable to all example clusters
+- Removed duplicate `05-identity.tf` files from example clusters (now handled by cluster module)
+
+- Created identity-admin module (`modules/identity-admin/`) for admin user creation:
+  - Separated admin user creation from cluster module for independent lifecycle management
+  - Allows admin user to be created initially and removed when external IDP is configured
+  - HTPasswd identity provider with cluster-admin group membership
+  - Can be easily added or removed from cluster configuration
+  - Updated all example clusters to use the new module
+- Created bastion module (`modules/bastion/`) for secure access to private clusters:
+  - SSM Session Manager support (no public IP, no SSH keys required)
+  - Optional public IP mode for testing
+  - Pre-installed OpenShift CLI (`oc`) and Kubernetes CLI (`kubectl`)
+  - IAM-based authentication via SSM
+  - Supports SSH tunnels for Terraform automation
+  - Supports sshuttle for VPN-like access
+  - Integrated into private and egress-zero cluster examples (optional, enabled by default)
+- Added Makefile targets for bastion and tunnel management:
+  - `make tunnel-start.<cluster>`: Start SSH tunnel to cluster API via bastion (for Terraform/automation)
+  - `make tunnel-stop.<cluster>`: Stop SSH tunnel
+  - `make tunnel-status.<cluster>`: Check if tunnel is running
+  - `make bastion-connect.<cluster>`: Connect to bastion via SSM Session Manager
+  - Tunnels forward localhost:6443 to cluster API, enabling Terraform to access private clusters
+  - Automatic tunnel cleanup on stop
+
+- Added Makefile targets for cluster access and credential management:
+  - `make login-public`, `make login-private`, `make login-egress-zero`: Login to clusters using `oc login` with terraform outputs
+  - `make show-endpoints-public`, `make show-endpoints-private`, `make show-endpoints-egress-zero`: Display API and console URLs from terraform outputs
+  - `make show-credentials-public`, `make show-credentials-private`, `make show-credentials-egress-zero`: Display admin credentials and endpoints (show-credentials automatically runs show-endpoints)
+  - All targets support getting admin password from `TF_VAR_admin_password` environment variable or `terraform.tfvars` file
+  - Login targets verify `oc` CLI is installed and handle errors gracefully
+- Added STS VPC endpoint to `network-public` module:
+  - STS endpoint is required for IAM role assumption (IRSA), OIDC provider operations
+  - Benefits: cost optimization (avoids NAT Gateway charges), lower latency, improved security
+  - Worker nodes in private subnets benefit from STS endpoint even in public networks
+  - Updated outputs to include STS endpoint ID
+  - Updated README to document all VPC endpoints created by the module
+
+- Makefile with targets for cluster management (init, plan, apply, destroy)
+- Code quality targets (fmt, validate)
+- Utility targets (clean, init-all, plan-all)
+- Initial repository structure
+- Network modules (public, private, egress-zero)
+  - Public module with Regional NAT Gateway (default) and zonal option
+  - Private module with VPC endpoints only
+  - Egress-zero module with strict security controls and VPC Flow Logs
+- IAM module for ROSA HCP
+  - OIDC configuration and provider
+  - Account roles using terraform-redhat/rosa-hcp/rhcs module
+  - Operator roles (Ingress, Control Plane, CSI, Image Registry, Network, Node Pool)
+- Cluster module (thin wrapper)
+  - Organizational defaults (private=true, etcd_encryption=false)
+  - Machine pool support with defaults
+  - Pass-through for all provider variables
+- Example cluster configurations
+  - Public cluster (development example)
+  - Private cluster (development example)
+  - Egress-zero cluster (production-ready with hardening)
+- Project documentation
+  - README.md with overview and quick start
+  - PLAN.md with detailed architecture and implementation plan
+  - CHANGELOG.md following Keep a Changelog format
+  - Module READMEs for all modules
+- Development guidelines (.cursorrules)
+  - Terraform best practices
+  - PLAN.md compliance requirements
+  - Documentation and versioning standards
+
 ### Changed
+- **ROSA default SG wait duration**: Increased `rosa_default_sg_wait_duration` default from `30s` to `120s` (Hypershift SG tagging still exceeded 30s on a fresh autonode apply).
+- **GitOps bootstrap chart versions**: Bump `cluster-bootstrap` to `0.5.15` and `cluster-bootstrap-acm-spoke` to `0.6.11` (CMP init removed; chart defaults to GHCR `gitops-tools` image).
+- **GitOps bootstrap `defaultImage`**: Hub and spoke bootstrap templates now emit `defaultImage` from new cluster module variable `gitops_tools_image` (default `ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest`).
+- **Enablement guide — CMP tools image**: Documents re-hosting `gitops-tools` to a private registry for egress-zero or registry policy, and overriding `gitops_tools_image` / `defaultImage` in bootstrap templates and Helm chart fork.
+- **ROSA VPCE security group destroy workaround retained**: OCPBUGS-74960 ([openshift/hypershift#7868](https://github.com/openshift/hypershift/pull/7868)) does not fully prevent orphaned "VPC endpoint security group" on 4.22.0 cluster delete; `null_resource.cleanup_rosa_security_groups` remains enabled.
 - **RHCS provider**: Updated to `~> 1.7.7` (OCM-25158 AutoNode fix — post-create PATCH and state reconciliation for `auto_node`)
   - Updated in root `terraform/00-providers.tf` and cluster/iam module `00-versions.tf`
   - Removed `lifecycle { ignore_changes = [auto_node] }` workaround from `rhcs_cluster_rosa_hcp`
-
-### Changed
 - **GitOps bootstrap defaultImage**: Reverted global `defaultImage: openshift/cli` in hub/spoke bootstrap templates. That change (from autonode PR #17) applied to all clusters but was intended only for ARM testing; it removed bundled helm from the CMP sidecar and broke plugin-based Argo CD apps. Chart default (`quay.io/gnunn/tools:latest`, amd64) is restored.
 
-### Fixed
-- **GitOps bootstrap before workers ready**: Bootstrap now waits for at least two Ready worker nodes after cluster login and before Helm install. Pre-install hooks (e.g. `installplan-approver`) schedule on workers; running bootstrap immediately after `terraform apply` caused `FailedScheduling: no nodes available` and a failed Helm release.
-- **Client VPN config path wrong directory**: VPN .ovpn files were written to `clusters/${cluster_name}/` instead of `clusters/${directory}/`. Added `cluster_config_dir` variable; plan script now passes `-var "cluster_config_dir=$CLUSTER_NAME"` so output path matches the Makefile cluster directory (e.g., `egress-zero`).
-- **Client VPN connection instructions path format**: Instructions now show path relative to project root (`./clusters/<cluster-dir>/<name>-vpn-client.ovpn`) instead of terraform-relative path. Added `client_config_display_path` to module; root outputs use constructed path.
-- **ArgoCD application-gitops invalid initialRepositories**: application-gitops subchart passed `null` to ArgoCD CR `spec.initialRepositories` when not set, causing validation error. The API expects a string (YAML/JSON), not array. Set `application-gitops.argocd.initialRepositories: "[]"` in hub-values template.
-- **GitOps operator not installing**: cluster-bootstrap Helm chart subscriptions default to `csv: null`, which produces invalid `spec.startingCSV: null` in the Subscription (Kubernetes rejects null). Added subscription override in values file (`subscriptions[0].csv`) so the GitOps operator installs correctly. Using values file merge (not `--set`) preserves name, channel, source, and sourceNamespace from chart defaults.
-
-### Changed
 - **Cluster module — autoscaling hints at cluster creation**: `rhcs_cluster_rosa_hcp` now passes `autoscaling_enabled`, `min_replicas`, and `max_replicas` as write-once creation-time hints (added in provider 1.7.5). This ensures the default machine pool is created with autoscaling already active, making the subsequent `rhcs_hcp_machine_pool.default` reconciliation a no-op and eliminating the `CLUSTERS-MGMT-403` race on multi-AZ clusters. `replicas` is set to `null` when autoscaling is enabled (mutually exclusive per the provider schema). The precondition error message was updated to reference `min_replicas` vs `replicas` based on the autoscaling toggle.
 - **Cluster module — bumped RHCS provider minimum to `~> 1.7.5`**: Required for `autoscaling_enabled`/`min_replicas`/`max_replicas` support on `rhcs_cluster_rosa_hcp`. Lock file updated to 1.7.6 (latest patch). Run `terraform init -upgrade` in `modules/infrastructure/cluster/` after pulling this change.
 - **GitOps bootstrap templates**: Moved `hub-values.yaml.tftpl` and `spoke-values.yaml.tftpl` from `scripts/cluster/templates/` to `modules/infrastructure/cluster/templates/` for better module encapsulation
@@ -54,21 +231,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configuration now managed declaratively by Terraform; no ROSA CLI or jq required
   - Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/guides/log-forwarders
 
-### Added
-- **AWS Client VPN** (`enable_client_vpn`): Terraform module for robust private cluster access
-  - Creates AWS Client VPN endpoint in VPC with mutual TLS authentication
-  - Generates `.ovpn` config for OpenVPN, AWS VPN Client, or Tunnelblick
-  - Recommended over sshuttle/bastion for cross-platform reliability
-  - Single subnet by default (~$108/mo); configurable for multi-subnet HA
-  - New variables: `enable_client_vpn`, `vpn_client_cidr_block`, `vpn_split_tunnel`, `vpn_session_timeout_hours`
-  - Makefile targets: `vpn-config.<cluster>` (config path/instructions), `vpn-start.<cluster>`, `vpn-stop.<cluster>`, `vpn-status.<cluster>` for OpenVPN tunnel control
-  - `ensure-tunnel` starts OpenVPN automatically when Client VPN is deployed (bootstrap/login)
-- **BYO VPC Support** (`network_type = "existing"`): Deploy clusters into an existing VPC without running any network module
-  - New variables: `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids`
-  - Root module uses data sources to look up subnets and constructs synthetic `local.network` object
-  - No network module invocation—user creates VPC, subnets, VPC endpoints, and NAT gateways before Terraform
-  - Documentation references `rosa create network` (ROSA CLI v1.2.48+) as a quick way to create compliant networking
-  - New example: `clusters/byo-vpc/terraform.tfvars` with prerequisite documentation
+- **BREAKING**: Renamed `enable_strict_egress` variable to `zero_egress` throughout the codebase
+  - Root module: `terraform/01-variables.tf` - variable renamed from `enable_strict_egress` to `zero_egress`
+  - Network-private module: variable renamed from `enable_strict_egress` to `zero_egress`
+  - All `.tfvars` files updated to use `zero_egress` instead of `enable_strict_egress`
+  - Scripts updated: `get-network-config.sh`, `Makefile.cluster`, tunnel scripts (`start.sh`, `stop.sh`, `status.sh`)
+  - Documentation updated: `README.md`, `PLAN.md`, `clusters/README.md`, module READMEs
+  - **Migration**: Update all `terraform.tfvars` files to replace `enable_strict_egress = true/false` with `zero_egress = true/false`
+  - **Rationale**: Matches ROSA API property name (`zero_egress`) for consistency across all modules and eliminates mapping layer
+- **IMPORTANT**: `zero_egress` is now independent of `network_type` - it's a cluster-level ROSA API property
+  - `zero_egress` is passed directly to cluster and IAM modules (independent of network configuration)
+  - Network infrastructure (NAT Gateway, security groups) is configured for zero egress when both `network_type="private"` AND `zero_egress=true`
+  - This allows `zero_egress` to be set independently, though it typically requires `network_type="private"` for PrivateLink API endpoint
+
+- **BREAKING**: Admin password management moved to AWS Secrets Manager:
+  - **BREAKING**: Variable renamed: `admin_password` → `admin_password_override` (nullable, optional)
+  - **BREAKING**: Removed `admin_password` output (password never output by Terraform)
+  - Added `admin_password_secret_arn` output (ARN of AWS Secrets Manager secret)
+  - If `admin_password_override` is not set, a random password is generated and stored in AWS Secrets Manager
+  - Password stored in secret: `rosa-hcp-{cluster_name}-admin-password`
+  - Makefile updated to retrieve password from AWS Secrets Manager using AWS CLI
+  - **Migration required**: Update any references to `admin_password` variable or output
+  - **Security improvement**: Password no longer stored in Terraform state or outputs
+
+- **BREAKING**: Reorganized repository structure to separate infrastructure and configuration:
+  - Modules reorganized: `modules/infrastructure/` (network, iam, cluster, bastion, identity-admin) and `modules/configuration/` (gitops)
+  - Module organization is based on provider type: infrastructure modules use OCM/AWS providers, configuration modules use Kubernetes/Terraform providers
+  - **BREAKING**: Moved `identity-admin` module from `modules/configuration/` to `modules/infrastructure/`:
+    - Uses `rhcs` (OCM) provider, not Kubernetes/Terraform providers
+    - Belongs in infrastructure based on provider type
+    - Updated all example cluster references to new path
+    - Updated documentation (README.md, PLAN.md, module READMEs)
+  - Cluster examples reorganized: Each cluster now has `infrastructure/` and `configuration/` subdirectories with separate state files
+  - Configuration uses `terraform_remote_state` data source to read infrastructure outputs
+  - Updated Makefile with infrastructure/configuration specific targets
+  - Module source paths updated: `modules/infrastructure/...` and `modules/configuration/...`
+  - **Migration required**: Existing clusters need to be migrated to new structure (see README.md for migration guide)
+
+- Clarified bastion host is for development/demo use only:
+  - Added prominent warnings in bastion module README and main README
+  - Updated variable descriptions in example clusters to warn against production use
+  - Added comments in example cluster configurations explaining production alternatives
+  - Documented that production should use AWS Transit Gateway, Direct Connect, or VPN
+  - Updated bastion subnet recommendation document with decision rationale
+
+- Switched tunnel implementation from SSH port forwarding to sshuttle VPN tunnel:
+  - `make tunnel-start.<cluster>` now uses `sshuttle` instead of SSH port forwarding
+  - sshuttle creates a VPN-like tunnel that routes ALL VPC traffic through the bastion
+  - This enables full cluster access including OAuth flows required for `oc login`
+  - Requires `sshuttle` to be installed (provides installation instructions if missing)
+  - Requires sudo privileges - displays warning message before prompting for local sudo password
+  - Tunnel detection in `show-endpoints` and `login` targets updated to check for sshuttle process
+  - Direct API URL is used (sshuttle routes traffic transparently)
+  - Added `vpc_cidr_block` and `region` outputs to all example clusters for tunnel management
+  - Updated help text and documentation to reflect sshuttle usage
+- Refactored admin user creation into separate `identity-admin` module:
+  - Removed `admin_password`, `admin_username`, and `admin_group` variables from cluster module
+  - Removed `rhcs_identity_provider.admin` and `rhcs_group_membership.admin` resources from cluster module
+  - Updated all example clusters to use `modules/identity-admin/` instead
+  - Enables independent lifecycle management (create initially, remove when external IDP configured)
+- Refactored Makefile to use pattern rules, reducing duplication:
+  - New pattern syntax: `make <action>.<cluster>` (e.g., `make apply.public`, `make login.private`)
+  - Supports all actions: `init`, `plan`, `apply`, `destroy`, `login`, `show-endpoints`, `show-credentials`
+  - Supports all clusters: `public`, `private`, `egress-zero`
+  - Legacy syntax still supported for backwards compatibility (e.g., `make apply-public`)
+  - Uses Make functions to map cluster names to directories automatically
+  - Updated help text to show both pattern and legacy syntax
+
+- Automatic version detection in cluster module: if `openshift_version` is not provided, the module now uses `rhcs_versions` data source to automatically determine the latest installable OpenShift version
+- Added `rhcs_versions` data source to query available OpenShift versions from the ROSA API
+- Updated IAM module to use upstream terraform-redhat/rosa-hcp/rhcs modules:
+  - `account-iam-resources` for account roles
+  - `oidc-config-and-provider` for OIDC configuration
+  - `operator-roles` for operator roles
+- Added `oidc_endpoint_url` variable to cluster module (required for STS configuration)
+
+- Updated all network modules to automatically calculate subnet CIDR size (matching reference pattern):
+  - Made `subnet_cidr_size` variable optional (defaults to `null`)
+  - Subnet CIDR size is now automatically calculated based on VPC CIDR size and number of subnets needed
+  - Calculation ensures sufficient space: `subnet_cidr_size = vpc_cidr_size + ceil(log2(total_subnets))`
+  - Examples: /16 VPC with 6 subnets (multi-AZ public) → /19, /16 VPC with 3 subnets (multi-AZ private) → /18
+  - Can still be overridden by explicitly setting `subnet_cidr_size` if needed
+  - Removed `subnet_cidr_size` from all example cluster configurations
+- Updated all network modules to automatically calculate availability zones (matching reference implementation):
+  - Removed `availability_zones` variable from all network modules
+  - Added `data.aws_availability_zones.available` data source to automatically query available AZs
+  - Network modules now use first 3 AZs for multi-AZ, first 1 AZ for single-AZ
+  - Added `private_subnet_azs` and `public_subnet_azs` outputs to network modules
+  - Cluster module now receives `availability_zones` from network module output instead of requiring it as input
+  - Removed `availability_zones` variable from all example cluster configurations
+  - Updated example clusters to use `module.network.private_subnet_azs` for cluster availability zones
+- Added machine type validation using `rhcs_machine_types` data source in cluster module:
+  - Instance types are now validated against available ROSA machine types for the specified region
+  - Clear error messages guide users to available machine types if validation fails
+  - Validation applies to both `default_instance_type` and `machine_pools[].instance_type`
+- Added `name_prefix` variable to all network modules to ensure unique AWS resource names across clusters:
+  - All resource names (VPC, subnets, NAT gateways, VPC endpoints, security groups, etc.) now use `${var.name_prefix}-` prefix
+  - Example clusters updated to pass `name_prefix = var.cluster_name`
+  - Updated all module README files to document the new variable
+- Updated all network modules to automatically calculate subnet CIDRs (matching reference implementation):
+  - Removed `private_subnet_cidrs` and `public_subnet_cidrs` variables
+  - Added `subnet_cidr_size` variable (default: 20 for /20 subnets)
+  - Subnet CIDRs are now calculated automatically from VPC CIDR and subnet size
+  - Private subnets are calculated first, then public subnets (for network-public module)
+- Removed regional NAT Gateway support from network-public module - now uses standard (zonal) NAT Gateways only (one per AZ)
+- Removed `nat_gateway_type` variable from network-public module
+- Updated network-public module to always create public subnets (required for NAT Gateways)
+- Updated all example clusters to use automatic subnet CIDR calculation
+- Updated Makefile to save plan files (`terraform.tfplan`) for all plan targets
+- Updated apply targets to use saved plan files instead of running plan again
+- Added `*.tfplan` and `terraform.tfplan` to `.gitignore`
+- Fixed deprecation warning: Replaced `data.aws_region.current.name` with `data.aws_region.current.id` in all network modules (public, private, egress-zero)
+- Updated cluster module to align with rh-mobb reference implementation:
+  - Added `machine_cidr` attribute (required, uses `vpc_cidr` variable)
+  - Added `aws_billing_account_id` variable (optional, defaults to current account)
+  - Added `replicas`, `compute_machine_type`, `ec2_metadata_http_tokens`, `properties`, and lifecycle settings to cluster resource
+  - Machine pool `aws_node_pool` now preserves instance type from data source (allows override via `machine_pools` variable)
+  - Updated example clusters to pass `vpc_cidr` and `multi_az` to cluster module
+- Updated cluster module to follow rh-mobb patterns:
+  - Version detection: Uses `rhcs_versions` data source with search filter and order
+  - Machine pools: Reads default pools created by cluster, then manages them (following rh-mobb pattern)
+  - Replicas logic: HCP uses 1 per subnet for multi-AZ, 2 for single-AZ
+  - Added `compute_machine_type`, `replicas`, `ec2_metadata_http_tokens`, `properties`, and lifecycle settings to cluster resource
+- Updated cluster module STS configuration to match upstream pattern:
+  - `role_arn` now uses installer_role_arn (not operator role ARN)
+  - Added `oidc_endpoint_url` to STS block
+  - Removed `operator_role_arns` variable (operator roles created via prefix)
+
+- Default Terraform backend to local state storage in all cluster examples
+- S3 backend configuration commented out for easy reference when needed
+- Updated machine pool replica settings in all cluster examples:
+  - Single AZ: min_replicas = 2, max_replicas = 4 (double min)
+  - Multi-AZ: min_replicas = 3, max_replicas = 6 (double min)
+- Renamed module Terraform files to use numbered prefixes following best practices:
+  - `versions.tf` → `00-versions.tf` (provider configuration, always first)
+  - `variables.tf` → `01-variables.tf` (variable definitions)
+  - `main.tf` → `10-main.tf` (main resources)
+  - `outputs.tf` → `90-outputs.tf` (outputs, always last)
 
 ### Deprecated
 - **Bastion and sshuttle**: No longer used by default for egress-zero clusters. AWS Client VPN is the default. Bastion/sshuttle modules remain available; `tunnel-start`/`tunnel-stop`/`tunnel-status` targets exist for manual use, but `ensure-tunnel` no longer auto-starts sshuttle. Set `enable_bastion = true` and run `tunnel-start` manually if needed.
@@ -122,92 +421,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reference: https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/security_and_compliance/rosa-forwarding-control-plane-logs
   - Files: `modules/infrastructure/iam/22-control-plane-log-forwarding.tf`, `modules/infrastructure/cluster/21-control-plane-log-forwarding.tf`, `modules/infrastructure/cluster/22-control-plane-log-forwarding-resources.tf`
 
-### Changed
-- **BREAKING**: Renamed `enable_strict_egress` variable to `zero_egress` throughout the codebase
-  - Root module: `terraform/01-variables.tf` - variable renamed from `enable_strict_egress` to `zero_egress`
-  - Network-private module: variable renamed from `enable_strict_egress` to `zero_egress`
-  - All `.tfvars` files updated to use `zero_egress` instead of `enable_strict_egress`
-  - Scripts updated: `get-network-config.sh`, `Makefile.cluster`, tunnel scripts (`start.sh`, `stop.sh`, `status.sh`)
-  - Documentation updated: `README.md`, `PLAN.md`, `clusters/README.md`, module READMEs
-  - **Migration**: Update all `terraform.tfvars` files to replace `enable_strict_egress = true/false` with `zero_egress = true/false`
-  - **Rationale**: Matches ROSA API property name (`zero_egress`) for consistency across all modules and eliminates mapping layer
-- **IMPORTANT**: `zero_egress` is now independent of `network_type` - it's a cluster-level ROSA API property
-  - `zero_egress` is passed directly to cluster and IAM modules (independent of network configuration)
-  - Network infrastructure (NAT Gateway, security groups) is configured for zero egress when both `network_type="private"` AND `zero_egress=true`
-  - This allows `zero_egress` to be set independently, though it typically requires `network_type="private"` for PrivateLink API endpoint
-
-### Added
-- **Termination Protection**: Added cluster termination protection feature
-  - New variable `enable_termination_protection` (default: `false`) in cluster module
-  - Creates `shell_script` resource that uses ROSA CLI to enable/disable delete protection
-  - Prevents accidental cluster deletion via ROSA CLI
-  - Note: Disabling protection requires manual action via OCM console (cannot be done via CLI)
-  - Script: `scripts/cluster/termination-protection.sh`
-  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/13.termination-protection.tf`
-- **ETCD KMS Key**: Added dedicated KMS key for etcd encryption
-  - Creates `aws_kms_key.etcd` resource when `enable_storage = true` and `etcd_encryption = true`
-  - KMS key persists through sleep operations (like EBS/EFS keys)
-  - Cluster resource automatically uses etcd KMS key ARN when `etcd_encryption = true`
-  - New outputs: `etcd_kms_key_id` and `etcd_kms_key_arn`
-  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/1.main.tf:5-12`
-- **Cert Manager IAM Roles**: Added IAM role and policy for cert-manager to use AWS Private CA
-  - New variable `enable_cert_manager_iam` (default: `false`) in cluster module
-  - Creates IAM role for `cert-manager:cert-manager` service account
-  - IAM policy grants AWS Private CA permissions (`acm-pca:DescribeCertificateAuthority`, `acm-pca:GetCertificate`, `acm-pca:IssueCertificate`)
-  - Bootstrap script updated to use `CERT_MANAGER_ROLE_ARN` environment variable from Terraform output
-  - New output `cert_manager_role_arn` exposes IAM role ARN
-  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/6.cert-manager.tf`
-- **Secrets Manager IAM Integration**: Added IAM role and policy for ArgoCD Vault Plugin to access AWS Secrets Manager
-  - New variable `enable_secrets_manager_iam` (default: `false`) in cluster module
-  - New variable `additional_secrets` (optional list of secret names) for granting access to additional secrets
-  - Creates IAM role for `openshift-gitops:vplugin` service account
-  - IAM policy uses explicit secret ARN list for security (not wildcards)
-  - Cluster credentials secret automatically included in policy
-  - Additional secrets looked up by name via data sources to get exact ARNs
-  - New output `secrets_manager_role_arn` exposes IAM role ARN
-  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/3.secrets.tf`
-- **CloudWatch Logging for OpenShift Logging Operator**: Added IAM role and policy for OpenShift Logging Operator to send logs to CloudWatch
-  - New variable `enable_cloudwatch_logging` (default: `false`) in cluster module
-  - Creates IAM role for `openshift-logging:logging` service account (used by ClusterLogForwarder)
-  - IAM policy grants CloudWatch Logs permissions (CreateLogGroup, CreateLogStream, PutLogEvents, etc.)
-  - New output `cloudwatch_logging_role_arn` exposes IAM role ARN
-  - Reference: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/4.logging.tf`
-
-### Added
-- **DNS Domain Registration**: Added DNS domain registration using `rhcs_dns_domain` resource with feature toggle:
-  - New `enable_persistent_dns_domain` variable in cluster module (default: `false`) controls DNS domain registration
-  - When enabled, creates `rhcs_dns_domain` resource in cluster module that persists between cluster creations (not gated by `persists_through_sleep`)
-  - DNS domain resource is created and managed within the cluster module for better encapsulation
-  - When disabled, ROSA uses default DNS domain
-  - Infrastructure files pass the toggle to the cluster module
-  - Reference implementation: `./reference/rosa-hcp-dedicated-vpc/terraform/1.main.tf:17-19`
-- **CloudWatch Audit Log Forwarding**: Added CloudWatch audit log forwarding as a toggleable feature (enabled by default):
-  - New `enable_audit_logging` variable (default: `true`) in cluster module
-  - Creates IAM role and policy for CloudWatch audit log forwarding
-  - IAM role uses OIDC federation for OpenShift logging service account (`system:serviceaccount:openshift-logging:cluster-logging`)
-  - New output `cloudwatch_audit_logging_role_arn` provides the role ARN for cluster configuration
-  - Configuration file: `modules/infrastructure/cluster/20-audit-logging.tf`
-  - Reference implementation: `./reference/rosa-hcp-dedicated-vpc/terraform/4.logging.tf`
-  - Note: Cluster configuration via OCM API or rosa CLI may be required depending on provider version
-  - **DEPRECATED**: Use `enable_control_plane_log_forwarding` instead for the new ROSA managed log forwarder
-- **API Endpoint Security Group Access**: Added optional `api_endpoint_allowed_cidrs` variable to cluster module:
-  - Allows specifying additional IPv4 CIDR blocks to access the ROSA HCP API endpoint
-  - By default, the VPC endpoint security group only allows access from within the VPC
-  - Useful for allowing access from VPN ranges, bastion hosts, or other VPCs
-  - Automatically finds the ROSA-managed VPC endpoint security group by tag name
-  - Creates ingress rules for each specified CIDR block (port 443/TCP)
-  - Only creates resources when CIDRs are provided and `persists_through_sleep` is true
-  - Reference implementation: `reference/rosa-hcp-dedicated-vpc/terraform/2.expose-api.tf`
-- **Machine Pool Management**: Added support for additional custom machine pools beyond default pools:
-  - New `additional_machine_pools` variable in cluster module for creating custom pools
-  - Support for advanced features: taints, labels, kubelet configs, tuning configs, version pinning
-  - Support for AWS features: capacity reservations, additional security groups, custom disk size
-  - New outputs: `default_machine_pools`, `additional_machine_pools`, `all_machine_pools`
-  - Validation to prevent name conflicts between default and additional pools
-  - Validation for subnet IDs, instance types, and autoscaling configuration
-  - Uses `for_each` pattern for stable resource addressing
-  - Reference implementation: `./reference/rosa-hcp-dedicated-vpc/terraform/1.main.tf:212-233`
-
 ### Removed
 - **BREAKING**: Removed `modules/infrastructure/network-egress-zero/` module
   - Egress-zero functionality has been consolidated into `network-private` module
@@ -221,149 +434,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated Makefile to remove all private cluster targets
   - Updated README.md to remove private cluster deployment instructions
 
-### Changed
-- **BREAKING**: Admin password management moved to AWS Secrets Manager:
-  - **BREAKING**: Variable renamed: `admin_password` → `admin_password_override` (nullable, optional)
-  - **BREAKING**: Removed `admin_password` output (password never output by Terraform)
-  - Added `admin_password_secret_arn` output (ARN of AWS Secrets Manager secret)
-  - If `admin_password_override` is not set, a random password is generated and stored in AWS Secrets Manager
-  - Password stored in secret: `rosa-hcp-{cluster_name}-admin-password`
-  - Makefile updated to retrieve password from AWS Secrets Manager using AWS CLI
-  - **Migration required**: Update any references to `admin_password` variable or output
-  - **Security improvement**: Password no longer stored in Terraform state or outputs
-
-### Added
-- **Sleep Protection Pattern**: Implemented `persists_through_sleep` pattern to prevent accidental resource destruction:
-  - Global `persists_through_sleep` variable (default: `true`) controls all resources by default
-  - Per-resource override variables: `persists_through_sleep_cluster`, `persists_through_sleep_iam`, `persists_through_sleep_network`
-  - When `persists_through_sleep = true`, resources are active and managed by Terraform
-  - To sleep cluster: Set `persists_through_sleep = false`, run `terraform apply` (resources are destroyed but essential metadata preserved)
-  - OIDC configuration and provider are never gated (preserved for reuse across clusters)
-  - Subnet tags in `network-existing` module are never gated (read-only, managed by ROSA)
-  - All modules updated: cluster, IAM, network (public/private/egress-zero), bastion
-  - All example clusters updated with `persists_through_sleep = true` by default
-  - Module outputs updated to handle conditional resources (return null when slept)
-  - Example cluster module calls updated to use `try()` for conditional dependencies
-  - Comprehensive documentation added to README.md with usage examples and workflow
-  - Resources tagged with `persists_through_sleep = "true"` tag to indicate they persist through sleep operations
-  - Designed for enterprise environments with strict change control and permission constraints
-
-### Changed
-- **BREAKING**: Reorganized repository structure to separate infrastructure and configuration:
-  - Modules reorganized: `modules/infrastructure/` (network, iam, cluster, bastion, identity-admin) and `modules/configuration/` (gitops)
-  - Module organization is based on provider type: infrastructure modules use OCM/AWS providers, configuration modules use Kubernetes/Terraform providers
-  - **BREAKING**: Moved `identity-admin` module from `modules/configuration/` to `modules/infrastructure/`:
-    - Uses `rhcs` (OCM) provider, not Kubernetes/Terraform providers
-    - Belongs in infrastructure based on provider type
-    - Updated all example cluster references to new path
-    - Updated documentation (README.md, PLAN.md, module READMEs)
-  - Cluster examples reorganized: Each cluster now has `infrastructure/` and `configuration/` subdirectories with separate state files
-  - Configuration uses `terraform_remote_state` data source to read infrastructure outputs
-  - Updated Makefile with infrastructure/configuration specific targets
-  - Module source paths updated: `modules/infrastructure/...` and `modules/configuration/...`
-  - **Migration required**: Existing clusters need to be migrated to new structure (see README.md for migration guide)
-
-### Added
-- Created gitops module (`modules/configuration/gitops/`) for deploying OpenShift GitOps operator:
-  - Deploys OpenShift GitOps operator (ArgoCD) via OperatorHub using oc CLI
-  - Uses terraform_data with local-exec provisioner to avoid Kubernetes provider interpolation issues
-  - Configurable operator channel, source, and install plan approval
-  - Waits for operator installation to complete and verifies deployment
-  - Supports custom namespace configuration
-  - Handles cluster authentication via oc CLI
-  - Comprehensive error handling and timeout configuration
-  - Full documentation with usage examples and troubleshooting guide
-
-### ⚠️ Work in Progress - Egress-Zero Cluster
-- **Egress-zero cluster configuration is currently non-functional**
-- Worker nodes are not starting successfully (0/1 replicas)
-- Security group egress rules have been added (HTTPS and DNS to VPC CIDR) but issues persist
-- Investigation ongoing: checking console logs, security groups, VPC endpoints, and IAM permissions
-- **Do not use egress-zero cluster example for production until this issue is resolved**
-
-### Changed
-- Clarified bastion host is for development/demo use only:
-  - Added prominent warnings in bastion module README and main README
-  - Updated variable descriptions in example clusters to warn against production use
-  - Added comments in example cluster configurations explaining production alternatives
-  - Documented that production should use AWS Transit Gateway, Direct Connect, or VPN
-  - Updated bastion subnet recommendation document with decision rationale
-
-### Added
-- Added identity provider support to cluster module:
-  - HTPasswd identity provider for admin user (optional, via `admin_password`)
-  - Group membership to add admin user to cluster-admins group
-  - Configurable admin username and group
-- Added `admin_password` variable to all example clusters
-- Removed duplicate `05-identity.tf` files from example clusters (now handled by cluster module)
-
-### Removed
 - Removed developer user functionality from cluster module (additional users should be configured separately after cluster creation)
 - Added `token` variable to all example clusters for RHCS provider authentication
 - Updated provider configuration to match rh-mobb reference implementation
 
-### Added
-- Created identity-admin module (`modules/identity-admin/`) for admin user creation:
-  - Separated admin user creation from cluster module for independent lifecycle management
-  - Allows admin user to be created initially and removed when external IDP is configured
-  - HTPasswd identity provider with cluster-admin group membership
-  - Can be easily added or removed from cluster configuration
-  - Updated all example clusters to use the new module
-- Created bastion module (`modules/bastion/`) for secure access to private clusters:
-  - SSM Session Manager support (no public IP, no SSH keys required)
-  - Optional public IP mode for testing
-  - Pre-installed OpenShift CLI (`oc`) and Kubernetes CLI (`kubectl`)
-  - IAM-based authentication via SSM
-  - Supports SSH tunnels for Terraform automation
-  - Supports sshuttle for VPN-like access
-  - Integrated into private and egress-zero cluster examples (optional, enabled by default)
-- Added Makefile targets for bastion and tunnel management:
-  - `make tunnel-start.<cluster>`: Start SSH tunnel to cluster API via bastion (for Terraform/automation)
-  - `make tunnel-stop.<cluster>`: Stop SSH tunnel
-  - `make tunnel-status.<cluster>`: Check if tunnel is running
-  - `make bastion-connect.<cluster>`: Connect to bastion via SSM Session Manager
-  - Tunnels forward localhost:6443 to cluster API, enabling Terraform to access private clusters
-  - Automatic tunnel cleanup on stop
-
-### Changed
-- Switched tunnel implementation from SSH port forwarding to sshuttle VPN tunnel:
-  - `make tunnel-start.<cluster>` now uses `sshuttle` instead of SSH port forwarding
-  - sshuttle creates a VPN-like tunnel that routes ALL VPC traffic through the bastion
-  - This enables full cluster access including OAuth flows required for `oc login`
-  - Requires `sshuttle` to be installed (provides installation instructions if missing)
-  - Requires sudo privileges - displays warning message before prompting for local sudo password
-  - Tunnel detection in `show-endpoints` and `login` targets updated to check for sshuttle process
-  - Direct API URL is used (sshuttle routes traffic transparently)
-  - Added `vpc_cidr_block` and `region` outputs to all example clusters for tunnel management
-  - Updated help text and documentation to reflect sshuttle usage
-- Refactored admin user creation into separate `identity-admin` module:
-  - Removed `admin_password`, `admin_username`, and `admin_group` variables from cluster module
-  - Removed `rhcs_identity_provider.admin` and `rhcs_group_membership.admin` resources from cluster module
-  - Updated all example clusters to use `modules/identity-admin/` instead
-  - Enables independent lifecycle management (create initially, remove when external IDP configured)
-- Refactored Makefile to use pattern rules, reducing duplication:
-  - New pattern syntax: `make <action>.<cluster>` (e.g., `make apply.public`, `make login.private`)
-  - Supports all actions: `init`, `plan`, `apply`, `destroy`, `login`, `show-endpoints`, `show-credentials`
-  - Supports all clusters: `public`, `private`, `egress-zero`
-  - Legacy syntax still supported for backwards compatibility (e.g., `make apply-public`)
-  - Uses Make functions to map cluster names to directories automatically
-  - Updated help text to show both pattern and legacy syntax
-
-### Added
-- Added Makefile targets for cluster access and credential management:
-  - `make login-public`, `make login-private`, `make login-egress-zero`: Login to clusters using `oc login` with terraform outputs
-  - `make show-endpoints-public`, `make show-endpoints-private`, `make show-endpoints-egress-zero`: Display API and console URLs from terraform outputs
-  - `make show-credentials-public`, `make show-credentials-private`, `make show-credentials-egress-zero`: Display admin credentials and endpoints (show-credentials automatically runs show-endpoints)
-  - All targets support getting admin password from `TF_VAR_admin_password` environment variable or `terraform.tfvars` file
-  - Login targets verify `oc` CLI is installed and handle errors gracefully
-- Added STS VPC endpoint to `network-public` module:
-  - STS endpoint is required for IAM role assumption (IRSA), OIDC provider operations
-  - Benefits: cost optimization (avoids NAT Gateway charges), lower latency, improved security
-  - Worker nodes in private subnets benefit from STS endpoint even in public networks
-  - Updated outputs to include STS endpoint ID
-  - Updated README to document all VPC endpoints created by the module
-
 ### Fixed
+- **GitOps CMP tools image missing `find`**: UBI9 minimal lacked `findutils`, causing CMP plugin discover to fail (`find: command not found`) and plugin apps (e.g. `cluster-config-autonode`) to stay `Sync: Unknown`. Added `findutils` and `git` (for `helm dependency update` on git-based chart deps); also bundle `kubectl` from the OC client tarball.
+- **ROSA default SG race on first apply**: EFS and AutoNode resources failed when `{cluster_id}-default-sg` was not yet tagged in AWS after `rhcs_cluster_rosa_hcp` became ready. Added `time_sleep` delay and shared `data.aws_security_groups.cluster_default` lookup (no local-exec).
+
+- **GitOps bootstrap before workers ready**: Bootstrap now waits for at least two Ready worker nodes after cluster login and before Helm install. Pre-install hooks (e.g. `installplan-approver`) schedule on workers; running bootstrap immediately after `terraform apply` caused `FailedScheduling: no nodes available` and a failed Helm release.
+- **Client VPN config path wrong directory**: VPN .ovpn files were written to `clusters/${cluster_name}/` instead of `clusters/${directory}/`. Added `cluster_config_dir` variable; plan script now passes `-var "cluster_config_dir=$CLUSTER_NAME"` so output path matches the Makefile cluster directory (e.g., `egress-zero`).
+- **Client VPN connection instructions path format**: Instructions now show path relative to project root (`./clusters/<cluster-dir>/<name>-vpn-client.ovpn`) instead of terraform-relative path. Added `client_config_display_path` to module; root outputs use constructed path.
+- **ArgoCD application-gitops invalid initialRepositories**: application-gitops subchart passed `null` to ArgoCD CR `spec.initialRepositories` when not set, causing validation error. The API expects a string (YAML/JSON), not array. Set `application-gitops.argocd.initialRepositories: "[]"` in hub-values template.
+- **GitOps operator not installing**: cluster-bootstrap Helm chart subscriptions default to `csv: null`, which produces invalid `spec.startingCSV: null` in the Subscription (Kubernetes rejects null). Added subscription override in values file (`subscriptions[0].csv`) so the GitOps operator installs correctly. Using values file merge (not `--set`) preserves name, channel, source, and sourceNamespace from chart defaults.
+
 - Added HTTPS and DNS egress rules to worker node security group in egress-zero module:
   - Worker nodes need HTTPS (443) egress to VPC CIDR to reach VPC endpoints (ECR, STS, CloudWatch)
   - Worker nodes need DNS (53) egress to VPC CIDR for DNS resolution
@@ -432,69 +516,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now matches reference implementation: prefixes should be `var.cluster_name` without trailing dash
   - This fixes the cluster waiting state error: "Operator Role(s) not found"
 
-### Changed
-- Automatic version detection in cluster module: if `openshift_version` is not provided, the module now uses `rhcs_versions` data source to automatically determine the latest installable OpenShift version
-- Added `rhcs_versions` data source to query available OpenShift versions from the ROSA API
-- Updated IAM module to use upstream terraform-redhat/rosa-hcp/rhcs modules:
-  - `account-iam-resources` for account roles
-  - `oidc-config-and-provider` for OIDC configuration
-  - `operator-roles` for operator roles
-- Added `oidc_endpoint_url` variable to cluster module (required for STS configuration)
-
-### Changed
-- Updated all network modules to automatically calculate subnet CIDR size (matching reference pattern):
-  - Made `subnet_cidr_size` variable optional (defaults to `null`)
-  - Subnet CIDR size is now automatically calculated based on VPC CIDR size and number of subnets needed
-  - Calculation ensures sufficient space: `subnet_cidr_size = vpc_cidr_size + ceil(log2(total_subnets))`
-  - Examples: /16 VPC with 6 subnets (multi-AZ public) → /19, /16 VPC with 3 subnets (multi-AZ private) → /18
-  - Can still be overridden by explicitly setting `subnet_cidr_size` if needed
-  - Removed `subnet_cidr_size` from all example cluster configurations
-- Updated all network modules to automatically calculate availability zones (matching reference implementation):
-  - Removed `availability_zones` variable from all network modules
-  - Added `data.aws_availability_zones.available` data source to automatically query available AZs
-  - Network modules now use first 3 AZs for multi-AZ, first 1 AZ for single-AZ
-  - Added `private_subnet_azs` and `public_subnet_azs` outputs to network modules
-  - Cluster module now receives `availability_zones` from network module output instead of requiring it as input
-  - Removed `availability_zones` variable from all example cluster configurations
-  - Updated example clusters to use `module.network.private_subnet_azs` for cluster availability zones
-- Added machine type validation using `rhcs_machine_types` data source in cluster module:
-  - Instance types are now validated against available ROSA machine types for the specified region
-  - Clear error messages guide users to available machine types if validation fails
-  - Validation applies to both `default_instance_type` and `machine_pools[].instance_type`
-- Added `name_prefix` variable to all network modules to ensure unique AWS resource names across clusters:
-  - All resource names (VPC, subnets, NAT gateways, VPC endpoints, security groups, etc.) now use `${var.name_prefix}-` prefix
-  - Example clusters updated to pass `name_prefix = var.cluster_name`
-  - Updated all module README files to document the new variable
-- Updated all network modules to automatically calculate subnet CIDRs (matching reference implementation):
-  - Removed `private_subnet_cidrs` and `public_subnet_cidrs` variables
-  - Added `subnet_cidr_size` variable (default: 20 for /20 subnets)
-  - Subnet CIDRs are now calculated automatically from VPC CIDR and subnet size
-  - Private subnets are calculated first, then public subnets (for network-public module)
-- Removed regional NAT Gateway support from network-public module - now uses standard (zonal) NAT Gateways only (one per AZ)
-- Removed `nat_gateway_type` variable from network-public module
-- Updated network-public module to always create public subnets (required for NAT Gateways)
-- Updated all example clusters to use automatic subnet CIDR calculation
-- Updated Makefile to save plan files (`terraform.tfplan`) for all plan targets
-- Updated apply targets to use saved plan files instead of running plan again
-- Added `*.tfplan` and `terraform.tfplan` to `.gitignore`
-- Fixed deprecation warning: Replaced `data.aws_region.current.name` with `data.aws_region.current.id` in all network modules (public, private, egress-zero)
-- Updated cluster module to align with rh-mobb reference implementation:
-  - Added `machine_cidr` attribute (required, uses `vpc_cidr` variable)
-  - Added `aws_billing_account_id` variable (optional, defaults to current account)
-  - Added `replicas`, `compute_machine_type`, `ec2_metadata_http_tokens`, `properties`, and lifecycle settings to cluster resource
-  - Machine pool `aws_node_pool` now preserves instance type from data source (allows override via `machine_pools` variable)
-  - Updated example clusters to pass `vpc_cidr` and `multi_az` to cluster module
-- Updated cluster module to follow rh-mobb patterns:
-  - Version detection: Uses `rhcs_versions` data source with search filter and order
-  - Machine pools: Reads default pools created by cluster, then manages them (following rh-mobb pattern)
-  - Replicas logic: HCP uses 1 per subnet for multi-AZ, 2 for single-AZ
-  - Added `compute_machine_type`, `replicas`, `ec2_metadata_http_tokens`, `properties`, and lifecycle settings to cluster resource
-- Updated cluster module STS configuration to match upstream pattern:
-  - `role_arn` now uses installer_role_arn (not operator role ARN)
-  - Added `oidc_endpoint_url` to STS block
-  - Removed `operator_role_arns` variable (operator roles created via prefix)
-
-### Fixed
 - Updated Makefile so plan targets depend on init targets, ensuring backend is initialized before planning
 - Fixed `rhcs_cluster_rosa_hcp` resource structure to match Terraform Registry API:
   - Changed `sts` from block to attribute (object) with required fields:
@@ -508,55 +529,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Corrected module source paths in all cluster examples (changed from `../../../../modules` to `../../../modules`)
 - Removed invalid `multi_az` attribute from cluster module calls (multi_az is only used in machine pools, not cluster-level)
 
-### Changed
-- Default Terraform backend to local state storage in all cluster examples
-- S3 backend configuration commented out for easy reference when needed
-- Updated machine pool replica settings in all cluster examples:
-  - Single AZ: min_replicas = 2, max_replicas = 4 (double min)
-  - Multi-AZ: min_replicas = 3, max_replicas = 6 (double min)
-- Renamed module Terraform files to use numbered prefixes following best practices:
-  - `versions.tf` → `00-versions.tf` (provider configuration, always first)
-  - `variables.tf` → `01-variables.tf` (variable definitions)
-  - `main.tf` → `10-main.tf` (main resources)
-  - `outputs.tf` → `90-outputs.tf` (outputs, always last)
-
-### Added
-- Makefile with targets for cluster management (init, plan, apply, destroy)
-- Code quality targets (fmt, validate)
-- Utility targets (clean, init-all, plan-all)
-- Initial repository structure
-- Network modules (public, private, egress-zero)
-  - Public module with Regional NAT Gateway (default) and zonal option
-  - Private module with VPC endpoints only
-  - Egress-zero module with strict security controls and VPC Flow Logs
-- IAM module for ROSA HCP
-  - OIDC configuration and provider
-  - Account roles using terraform-redhat/rosa-hcp/rhcs module
-  - Operator roles (Ingress, Control Plane, CSI, Image Registry, Network, Node Pool)
-- Cluster module (thin wrapper)
-  - Organizational defaults (private=true, etcd_encryption=false)
-  - Machine pool support with defaults
-  - Pass-through for all provider variables
-- Example cluster configurations
-  - Public cluster (development example)
-  - Private cluster (development example)
-  - Egress-zero cluster (production-ready with hardening)
-- Project documentation
-  - README.md with overview and quick start
-  - PLAN.md with detailed architecture and implementation plan
-  - CHANGELOG.md following Keep a Changelog format
-  - Module READMEs for all modules
-- Development guidelines (.cursorrules)
-  - Terraform best practices
-  - PLAN.md compliance requirements
-  - Documentation and versioning standards
-
-### Changed
-
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
+### ⚠️ Work in Progress - Egress-Zero Cluster
+- **Egress-zero cluster configuration is currently non-functional**
+- Worker nodes are not starting successfully (0/1 replicas)
+- Security group egress rules have been added (HTTPS and DNS to VPC CIDR) but issues persist
+- Investigation ongoing: checking console logs, security groups, VPC endpoints, and IAM permissions
+- **Do not use egress-zero cluster example for production until this issue is resolved**

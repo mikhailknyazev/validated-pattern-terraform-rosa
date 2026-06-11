@@ -21,21 +21,6 @@ resource "aws_efs_file_system" "main" {
   })
 }
 
-# Get the default security group for the cluster
-# The security group is tagged with the cluster ID by ROSA
-data "aws_security_groups" "cluster_default" {
-  count = var.enable_efs && local.persists_through_sleep ? 1 : 0
-
-  filter {
-    name   = "tag:Name"
-    values = ["${one(rhcs_cluster_rosa_hcp.main[*].id)}-default-sg"]
-  }
-
-  depends_on = [
-    rhcs_cluster_rosa_hcp.main
-  ]
-}
-
 # Security group ingress rules for EFS (port 2049)
 # Allow access from private subnets
 # Use count instead of for_each because var.private_subnet_cidrs may not be fully known at plan time

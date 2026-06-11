@@ -3,6 +3,9 @@
 # that ROSA doesn't clean up during cluster deletion. These orphaned rules block security group deletion,
 # which blocks VPC deletion, causing terraform destroy to hang.
 #
+# OCPBUGS-74960 (openshift/hypershift#7868) may improve deletion on 4.22+ but still leaves orphaned
+# "VPC endpoint security group" resources in practice (verified cz-demo destroy, 4.22.0). Keep enabled.
+#
 # This null_resource runs a destroy-time provisioner to proactively delete ROSA-managed security groups
 # after the cluster is destroyed. It identifies security groups by:
 # - ClusterName tag matching cluster name

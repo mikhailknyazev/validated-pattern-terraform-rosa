@@ -125,6 +125,7 @@ output "gitops_bootstrap_hub_values" {
     git_repo_url       = var.gitops_git_repo_url != null ? var.gitops_git_repo_url : ""
     helm_repo_url      = var.helm_repo_url
     acm_mode           = var.acm_mode
+    gitops_tools_image = var.gitops_tools_image
   }) : null
   sensitive = false
 }
@@ -140,6 +141,7 @@ output "gitops_bootstrap_spoke_values" {
     aws_account_id     = local.aws_account_id
     aws_kms_key_ebs    = var.kms_key_arn != null ? var.kms_key_arn : ""
     efs_file_system_id = var.efs_file_system_id != null ? var.efs_file_system_id : (length(aws_efs_file_system.main) > 0 ? aws_efs_file_system.main[0].id : "")
+    gitops_tools_image = var.gitops_tools_image
   }) : null
   sensitive = false
 }

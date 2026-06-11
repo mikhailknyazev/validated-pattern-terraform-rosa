@@ -164,6 +164,13 @@ variable "enable_efs" {
   nullable    = false
 }
 
+variable "rosa_default_sg_wait_duration" {
+  description = "Duration to wait after cluster create before looking up the ROSA default worker security group ({cluster_id}-default-sg). Hypershift tags this SG asynchronously after rhcs_cluster_rosa_hcp is ready."
+  type        = string
+  default     = "120s"
+  nullable    = false
+}
+
 variable "private_subnet_cidrs" {
   description = "List of private subnet CIDR blocks (required for EFS security group rules)"
   type        = list(string)
@@ -617,7 +624,7 @@ variable "helm_chart" {
 variable "helm_chart_version" {
   description = "Helm chart version for cluster bootstrap"
   type        = string
-  default     = "0.5.12"
+  default     = "0.5.16"
   nullable    = false
 }
 
@@ -654,6 +661,13 @@ variable "ecr_account" {
   type        = string
   default     = ""
   nullable    = true
+}
+
+variable "gitops_tools_image" {
+  description = "Container image for the Argo CD repo-server CMP sidecar (avp-helm). Re-host in your private registry for egress-zero or registry policy requirements; mirrored URL is passed as defaultImage in GitOps bootstrap Helm values."
+  type        = string
+  default     = "ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest"
+  nullable    = false
 }
 
 variable "ebs_kms_key_arn" {
@@ -730,7 +744,7 @@ variable "helm_chart_acm_spoke" {
 variable "helm_chart_acm_spoke_version" {
   description = "Helm chart version for ACM spoke cluster bootstrap"
   type        = string
-  default     = "0.6.10"
+  default     = "0.6.11"
   nullable    = false
 }
 

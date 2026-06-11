@@ -7,7 +7,7 @@
 # - AWS region typically must be us-east-1
 # - OpenShift version >= 4.19
 # Enablement is Terraform rhcs_cluster_rosa_hcp `auto_node` (no ROSA CLI required).
-openshift_version = "4.19.30"
+openshift_version = "4.22.0"
 region            = "us-east-1"
 
 network_type = "public"
@@ -18,9 +18,9 @@ vpc_cidr = "10.1.0.0/16"
 
 multi_az = false
 
-default_instance_type = "m6g.xlarge"
-default_min_replicas  = 2
-default_max_replicas  = 2
+# default_instance_type = "m6g.xlarge"
+default_min_replicas = 2
+default_max_replicas = 2
 
 additional_machine_pools = {}
 
@@ -39,9 +39,9 @@ enable_autonode = true
 # from `terraform output cluster_id` so IAM policy kubernetes.io/cluster/<id> matches AWS tags.
 # autonode_kubernetes_cluster_tag_id = "your-rhcs-cluster-id"
 
-additional_cluster_properties = {
-  provision_shard_id = "9f11dd2b-98c1-11f0-8fe5-0a580a830a08"
-}
+# additional_cluster_properties = {
+#   provision_shard_id = "9f11dd2b-98c1-11f0-8fe5-0a580a830a08"
+# }
 
 # Minimal optional features for a lab cluster
 enable_audit_logging                = false

@@ -358,6 +358,68 @@ Align your fork with these versions, or update the template in your infrastructu
 - Edit `helm_repo_url` default in [modules/infrastructure/cluster/01-variables.tf](../modules/infrastructure/cluster/01-variables.tf), **or**
 - Set `HELM_REPO_URL` at bootstrap time — see [README-bootstrap-gitops.md](../scripts/cluster/README-bootstrap-gitops.md)
 
+### GitOps CMP tools container image
+
+The `cluster-bootstrap` and `cluster-bootstrap-acm-spoke` charts configure an Argo CD repo-server **ConfigManagementPlugin (CMP) sidecar** named `avp`. That sidecar runs `helm`, `argocd-vault-plugin`, `find`, `git`, and related tools so Argo CD can render Application sources marked `plugin: true` in cluster-config (for example AutoNode charts that use AVP with AWS Secrets Manager).
+
+**Upstream image** (multi-arch, built from [hack/docker/gitops-tools/](../hack/docker/gitops-tools/)):
+
+```text
+ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:<tag>
+```
+
+CI publishes `:latest` and `:sha` tags on merge to main. Pin a digest or SHA tag in production rather than floating `:latest`.
+
+**When to re-host:** Mirror this image into **your private registry** when any of the following apply:
+
+- `zero_egress = true` (no pull path to `ghcr.io` without a VPC endpoint and allowlist)
+- Corporate registry policy (only ECR, Artifactory, Harbor, etc.)
+- ACM spoke clusters that must not depend on public GHCR at runtime
+
+Typical target: **Amazon ECR** in the cluster account (or a shared platform registry). Ensure worker nodes and the GitOps repo-server can pull the mirrored image (same-account ECR, pull secrets, or IRSA as appropriate).
+
+**Re-hosting workflow:**
+
+```mermaid
+flowchart LR
+  Upstream[ghcr.io gitops-tools image]
+  Upstream --> Mirror[skopeo or crane copy to ECR]
+  Mirror --> Private[Private registry URL]
+  Private --> Tftpl[hub-values / spoke-values defaultImage]
+  Private --> ChartFork[Helm chart values.yaml defaultImage]
+  Tftpl --> Bootstrap[make cluster.NAME.bootstrap]
+  ChartFork --> Bootstrap
+```
+
+1. Copy the image to your registry (multi-arch recommended):
+
+   ```bash
+   # Example: mirror to ECR (run from a host with registry access)
+   aws ecr create-repository --repository-name rosa/gitops-tools
+   skopeo copy --all \
+     docker://ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest \
+     docker://808082629126.dkr.ecr.us-east-1.amazonaws.com/rosa/gitops-tools:latest
+   ```
+
+2. Point Terraform bootstrap values at the mirrored image — set `gitops_tools_image` in the cluster module ([01-variables.tf](../modules/infrastructure/cluster/01-variables.tf)), which flows into `defaultImage` in both bootstrap templates:
+
+   - [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) — hub and standalone (`cluster-bootstrap`)
+   - [spoke-values.yaml.tftpl](../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) — ACM spoke (`cluster-bootstrap-acm-spoke`)
+
+   Example module override:
+
+   ```hcl
+   gitops_tools_image = "808082629126.dkr.ecr.us-east-1.amazonaws.com/rosa/gitops-tools:9e983e6"
+   ```
+
+   Or edit the `defaultImage: ${gitops_tools_image}` line default in those `.tftpl` files in your infrastructure fork.
+
+3. Update **`defaultImage`** in your Helm chart fork as well ([cluster-bootstrap/values.yaml](https://github.com/rh-mobb/validated-pattern-helm-charts/blob/main/charts/cluster-bootstrap/values.yaml) and [cluster-bootstrap-acm-spoke/values.yaml](https://github.com/rh-mobb/validated-pattern-helm-charts/blob/main/charts/cluster-bootstrap-acm-spoke/values.yaml)) so chart defaults match when bootstrap is run outside Terraform or when values are not regenerated.
+
+4. Re-run bootstrap (or apply the rendered ArgoCD CR) and hard-refresh plugin-based Applications if the repo-server image changed after initial install.
+
+For zero-egress Git source mirroring (separate from this container image), see [egress-zero-gitops.md](egress-zero-gitops.md).
+
 ---
 
 ## 4. Provider and Reference Material Strategy
@@ -828,6 +890,8 @@ flowchart TD
 | Issue | Cause | Workaround |
 |-------|-------|------------|
 | Bootstrap can't reach GitHub | Egress-zero or no VPC endpoints for Git | CodeCommit mirroring — [egress-zero-gitops.md](egress-zero-gitops.md) |
+| CMP plugin apps stuck `Sync: Unknown` (`find: command not found` or plugin sidecar errors) | Repo-server CMP image missing tools or wrong/unreachable image | Use current `gitops-tools` image; re-host to private registry and set `gitops_tools_image` / `defaultImage` in bootstrap templates — [§3c GitOps CMP tools image](#gitops-cmp-tools-container-image) |
+| Repo-server can't pull CMP sidecar image | `ghcr.io` blocked (egress-zero, registry policy) | Mirror `gitops-tools` to ECR; update `defaultImage` in [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) and [spoke-values.yaml.tftpl](../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) |
 | `gitops_git_target_revision` ignored | Not wired in hub-values template | Use cluster-config default branch or edit template |
 | Helm chart version mismatch | Versions hardcoded in template | Pin versions in your helm fork to match template |
 | ACM examples default to `noacm` | `acm_mode` not in example tfvars | Set module variable; use `bootstrap-spoke` target |
@@ -863,7 +927,9 @@ These improvements are documented as future work:
 |----------|---------|-------------|
 | `acm_mode` | `noacm` | `hub`, `spoke`, or `noacm` |
 | `helm_repo_url` | `https://rh-mobb.github.io/validated-pattern-helm-charts/` | Your published Helm repo |
-| `helm_chart_version` | `0.5.12` | `cluster-bootstrap` chart version |
+| `helm_chart_version` | `0.5.15` | `cluster-bootstrap` chart version |
+| `helm_chart_acm_spoke_version` | `0.6.11` | `cluster-bootstrap-acm-spoke` chart version |
+| `gitops_tools_image` | `ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest` | CMP repo-server sidecar image; re-host for egress-zero or registry policy — see [§3c](#gitops-cmp-tools-container-image) |
 | `gitops_csv` | `openshift-gitops-operator.v1.19.2` | GitOps operator CSV |
 | `hub_credentials_secret_name` | `""` | Hub secret for spoke mode |
 | `acm_region` | `""` | Hub region for spoke mode |

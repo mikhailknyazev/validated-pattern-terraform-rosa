@@ -20,34 +20,15 @@ resource "aws_ec2_tag" "private_subnet_karpenter_discovery" {
   ]
 }
 
-data "aws_security_groups" "autonode_default" {
-  count = local.autonode_enabled ? 1 : 0
-
-  filter {
-    name   = "vpc-id"
-    values = [var.vpc_id]
-  }
-  filter {
-    name = "tag:Name"
-    values = [
-      "${one(rhcs_cluster_rosa_hcp.main[*].id)}-default-sg"
-    ]
-  }
-
-  depends_on = [
-    rhcs_cluster_rosa_hcp.main,
-  ]
-}
-
 resource "aws_ec2_tag" "default_sg_karpenter_discovery" {
   count = local.autonode_enabled ? 1 : 0
 
-  resource_id = data.aws_security_groups.autonode_default[0].ids[0]
+  resource_id = data.aws_security_groups.cluster_default[0].ids[0]
   key         = "karpenter.sh/discovery"
   value       = one(rhcs_cluster_rosa_hcp.main[*].id)
 
   depends_on = [
     rhcs_cluster_rosa_hcp.main,
-    data.aws_security_groups.autonode_default,
+    data.aws_security_groups.cluster_default,
   ]
 }

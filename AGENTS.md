@@ -529,21 +529,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ```
 
 **Changelog Rules**:
-1. **Every change MUST be documented** in CHANGELOG.md
-2. **Group changes by type**: Added, Changed, Deprecated, Removed, Fixed, Security
-3. **Link to issues/PRs**: Reference related issues or pull requests
-4. **Date format**: Use YYYY-MM-DD format
-5. **Unreleased section**: Keep an "Unreleased" section for upcoming changes
-6. **Update on every commit**: Add entries as you make changes
+1. **Document the delta, not the backlog**: Only add entries for changes in the **current commit/PR** (since the last commit on the branch). Do not re-list historical work or copy entries into multiple version sections.
+2. **Update at commit/PR time, not during exploration**: Do not update CHANGELOG.md for throwaway experiments, reverted attempts, or WIP that may not ship. Update when preparing a commit or pull request with finalized changes.
+3. **One `[Unreleased]` block per category**: Use a single `### Added`, `### Changed`, `### Fixed`, etc. under `[Unreleased]`. Never duplicate section headers or paste the same bullet into historical `## [x.y.z]` sections.
+4. **Group changes by type**: Added, Changed, Deprecated, Removed, Fixed, Security (Keep a Changelog order)
+5. **One bullet per logical change**: Merge related edits into one entry; avoid duplicate bullets for the same fix or feature
+6. **Link to issues/PRs**: Reference related issues or pull requests when applicable
+7. **Date format**: Use YYYY-MM-DD format on released version headers
+8. **Remove stale entries**: If code is reverted or abandoned, remove the matching `[Unreleased]` entry—do not leave changelog notes for work that did not land
 
-**When to update CHANGELOG.md**:
+**When to update CHANGELOG.md** (only for changes landing in the current commit/PR):
 - Adding new features or modules
 - Changing existing functionality
 - Fixing bugs
-- Deprecating features
-- Removing features
+- Deprecating or removing features
 - Security updates
 - **Any deviation from PLAN.md** (document why)
+
+**When NOT to update CHANGELOG.md**:
+- Exploratory edits, spikes, or debugging that will be reverted
+- Changes already documented in `[Unreleased]` for the same work
+- Bulk “catch-up” edits that duplicate existing entries or backfill old releases under `[Unreleased]`
+
+**Delta-based workflow** (run before editing CHANGELOG.md):
+
+```bash
+# What changed since the last commit (uncommitted work)
+git diff --name-only HEAD
+
+# What the branch adds vs main (for a PR)
+git diff --name-only main...HEAD
+
+# See if an entry already exists
+grep -i "keyword" CHANGELOG.md
+```
+
+1. **Identify scope** from `git diff`—only files and behavior in that diff get changelog entries
+2. **Read existing `[Unreleased]`**—extend or edit an existing bullet if the same change; do not add a second bullet
+3. **Add minimal entries** under the correct single section header
+4. **On revert**—remove entries that no longer match the diff
+
+**Example — good vs bad**:
+
+```markdown
+# ❌ BAD: documents exploration, duplicates work, wrong section placement
+### Fixed
+- **GitOps CMP tools image missing `find`**: ...   # added during debugging
+# (same entry pasted again under ## [1.2.0] and three more times in [Unreleased])
+
+# ✅ GOOD: one entry in [Unreleased], only when committing the fix
+### Fixed
+- **GitOps CMP tools image missing `find`**: UBI9 minimal lacked `findutils`; added `findutils`, `git`, and bundled `kubectl` in `hack/docker/gitops-tools/Dockerfile`.
+```
 
 ### Version Tags
 
@@ -1118,7 +1155,7 @@ make test            # Run all tests (recommended before commit)
 When writing new Terraform code, ensure:
 - [ ] **PLAN.md reviewed** - Changes align with project plan
 - [ ] **PLAN.md updated** - If architecture changed, update the plan
-- [ ] **CHANGELOG.md updated** - Document all changes
+- [ ] **CHANGELOG.md updated** - Document only changes since last commit (delta for this PR/commit); no duplicate entries or section headers
 - [ ] File uses numeric prefix (00-99) for execution order
 - [ ] File name uses lowercase with underscores
 - [ ] Provider versions are pinned
@@ -1157,7 +1194,7 @@ Before committing code, ensure:
 8. [ ] **Plan regenerated** - Deleted old plan and regenerated after code changes
 9. [ ] Code follows PLAN.md specifications
 10. [ ] PLAN.md updated if architecture changed
-11. [ ] CHANGELOG.md updated with changes
+11. [ ] CHANGELOG.md updated with changes since last commit only (see Versioning and Changelog — delta-based workflow)
 12. [ ] All documentation updated (README.md, module docs)
 13. [ ] **Code quality checks passed** - **MANDATORY**: Run `make test` after modifying Terraform or shell script files (see Code Quality Checks section)
     - [ ] Terraform files formatted: `make tf-fmt-check` passes
