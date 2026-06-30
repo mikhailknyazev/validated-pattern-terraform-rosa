@@ -22,9 +22,9 @@ make cluster.public.validate-terraform
 
 | Script | Purpose |
 |--------|---------|
-| [`account.sh`](https://github.com/rh-mobb/vp-terraform-rosa/blob/main/scripts/validate/account.sh) | Operator tools, AWS creds, ROSA/OCM linking, quotas, URL connectivity |
-| [`byo-network.sh`](https://github.com/rh-mobb/vp-terraform-rosa/blob/main/scripts/validate/byo-network.sh) | VPC DNS, subnets, tags, endpoints, route tables |
-| [`prereqs.sh`](https://github.com/rh-mobb/vp-terraform-rosa/blob/main/scripts/validate/prereqs.sh) | Combined validation driven by cluster `terraform.tfvars` |
+| [`account.sh`](https://github.com/rh-mobb/validated-pattern-terraform-rosa/blob/main/scripts/validate/account.sh) | Operator tools, AWS creds, ROSA/OCM linking, quotas, URL connectivity |
+| [`byo-network.sh`](https://github.com/rh-mobb/validated-pattern-terraform-rosa/blob/main/scripts/validate/byo-network.sh) | VPC DNS, subnets, tags, endpoints, route tables |
+| [`prereqs.sh`](https://github.com/rh-mobb/validated-pattern-terraform-rosa/blob/main/scripts/validate/prereqs.sh) | Combined validation driven by cluster `terraform.tfvars` |
 
 ## Direct usage
 

@@ -67,7 +67,7 @@ See [IAM and KMS Handoff](iam-kms.md).
 | `vpc_cidr` | Yes (must match VPC) |
 | `region` | Yes |
 
-Defined in [`terraform/01-variables.tf`](https://github.com/rh-mobb/vp-terraform-rosa/blob/main/terraform/01-variables.tf).
+Defined in [`terraform/01-variables.tf`](https://github.com/rh-mobb/validated-pattern-terraform-rosa/blob/main/terraform/01-variables.tf).
 
 ## Related
 

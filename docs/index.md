@@ -62,7 +62,7 @@ This infrastructure repo is one part of the **three-repository pattern** for ROS
 
 | # | Repository | Role | Upstream |
 |---|------------|------|----------|
-| 1 | **Infrastructure** | Terraform Day 0 — VPC, IAM, cluster, bootstrap orchestration | [rh-mobb/vp-terraform-rosa](https://github.com/rh-mobb/vp-terraform-rosa) (this repo) |
+| 1 | **Infrastructure** | Terraform Day 0 — VPC, IAM, cluster, bootstrap orchestration | [rh-mobb/validated-pattern-terraform-rosa](https://github.com/rh-mobb/validated-pattern-terraform-rosa) (this repo) |
 | 2 | **cluster-config** | GitOps configuration consumed by Argo CD after bootstrap | [rh-mobb/rosa-cluster-config](https://github.com/rh-mobb/rosa-cluster-config) |
 | 3 | **Helm charts** | Bootstrap and app-of-apps charts (`cluster-bootstrap`, etc.) | [rh-mobb/validated-pattern-helm-charts](https://github.com/rh-mobb/validated-pattern-helm-charts) |
 

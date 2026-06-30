@@ -1,8 +1,8 @@
 site_name: ROSA HCP Terraform
 site_description: Production-grade Terraform for Red Hat OpenShift Service on AWS with Hosted Control Planes
-site_url: https://rh-mobb.github.io/vp-terraform-rosa/
-repo_url: https://github.com/rh-mobb/vp-terraform-rosa
-repo_name: rh-mobb/vp-terraform-rosa
+site_url: https://rh-mobb.github.io/validated-pattern-terraform-rosa/
+repo_url: https://github.com/rh-mobb/validated-pattern-terraform-rosa
+repo_name: rh-mobb/validated-pattern-terraform-rosa
 edit_uri: edit/main/docs/
 
 theme:

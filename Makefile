@@ -284,7 +284,7 @@ docs-venv: ## Create docs virtualenv and install requirements-docs.txt
 	@echo "$(GREEN)✓ Docs dependencies ready$(NC)"
 
 docs-preview: docs-venv ## Set up docs deps and serve at http://127.0.0.1:8000
-	@echo "$(BLUE)Documentation preview: http://127.0.0.1:8000/vp-terraform-rosa/$(NC)"
+	@echo "$(BLUE)Documentation preview: http://127.0.0.1:8000/validated-pattern-terraform-rosa/$(NC)"
 	@echo "$(BLUE)Press Ctrl+C to stop$(NC)"
 	@$(DOCS_MKDOCS) serve
 

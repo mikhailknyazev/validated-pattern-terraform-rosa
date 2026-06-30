@@ -2,7 +2,7 @@
 
 Production-grade Terraform repository for deploying Red Hat OpenShift Service on AWS (ROSA) with Hosted Control Planes (HCP).
 
-**Documentation:** [https://rh-mobb.github.io/vp-terraform-rosa/](https://rh-mobb.github.io/vp-terraform-rosa/) — prerequisites, enablement guide, module reference, and validation scripts. Local preview: `make docs-preview`.
+**Documentation:** [https://rh-mobb.github.io/validated-pattern-terraform-rosa/](https://rh-mobb.github.io/validated-pattern-terraform-rosa/) — prerequisites, enablement guide, module reference, and validation scripts. Local preview: `make docs-preview`.
 
 ## Overview
 
@@ -105,7 +105,7 @@ Local docs preview: `make docs-preview`
 
 ## Documentation
 
-**Published site:** [https://rh-mobb.github.io/vp-terraform-rosa/](https://rh-mobb.github.io/vp-terraform-rosa/)
+**Published site:** [https://rh-mobb.github.io/validated-pattern-terraform-rosa/](https://rh-mobb.github.io/validated-pattern-terraform-rosa/)
 
 | Resource | Path |
 |----------|------|

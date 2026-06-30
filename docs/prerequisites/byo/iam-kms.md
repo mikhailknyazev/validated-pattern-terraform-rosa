@@ -4,7 +4,7 @@ Layer **2b** — security/IAM team owns roles, OIDC, and KMS keys separately fro
 
 ## Current root module behavior
 
-The unified root module ([`terraform/10-main.tf`](https://github.com/rh-mobb/vp-terraform-rosa/blob/main/terraform/10-main.tf)) **always** invokes `module "iam"`. There are no root-level variables to pass external installer role ARNs or pre-existing KMS keys today.
+The unified root module ([`terraform/10-main.tf`](https://github.com/rh-mobb/validated-pattern-terraform-rosa/blob/main/terraform/10-main.tf)) **always** invokes `module "iam"`. There are no root-level variables to pass external installer role ARNs or pre-existing KMS keys today.
 
 **BYO IAM/KMS requires module-level composition**, not `network_type = "existing"` alone.
 

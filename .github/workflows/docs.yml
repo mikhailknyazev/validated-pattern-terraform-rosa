@@ -16,13 +16,24 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
+# GitHub Pages (build_type: workflow) requires the official deploy-pages flow —
+# mkdocs gh-deploy pushes a gh-pages branch, which this repo's Pages config does not serve.
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Build and deploy MkDocs site
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,5 +49,11 @@ jobs:
       - name: Build documentation (strict)
         run: mkdocs build --strict
 
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
       - name: Deploy to GitHub Pages
-        run: mkdocs gh-deploy --force
+        id: deployment
+        uses: actions/deploy-pages@v4
