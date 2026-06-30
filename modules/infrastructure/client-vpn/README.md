@@ -90,6 +90,3 @@ Client VPN costs more but provides reliable, cross-platform access without per-u
 2. **Import config**: Use the .ovpn file from `clusters/<name>/<name>-vpn-client.ovpn`
 3. **Connect**: Connect via the client; access cluster API/console directly
 
-## Reference
-
-- [reference/rosa-tf/modules/networking/client-vpn/](../../../reference/rosa-tf/modules/networking/client-vpn/) - Original implementation

@@ -58,7 +58,7 @@ Create a Route53 private hosted zone for the cluster's base domain. This zone wi
 
 ```hcl
 # Route53 Private Hosted Zone for Ingress Controllers
-# Reference: ./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/11.ingress.tf
+# Reference: https://github.com/redhat-rosa/rosa-hcp-dedicated-vpc/blob/main/terraform/11.ingress.tf
 # This creates a private Route53 hosted zone for the cluster's base domain.
 # external-dns operator will automatically create DNS records in this zone for ingress controllers.
 #
@@ -664,4 +664,4 @@ oc get secret -n openshift-ingress
 - [Cert-Manager Documentation](https://cert-manager.io/docs/)
 - [OpenShift Ingress Operator Documentation](https://docs.openshift.com/container-platform/latest/networking/ingress-operator.html)
 - [Route53 Private Hosted Zones](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/hosted-zones-private.html)
-- Reference Implementation: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/11.ingress.tf`
+- Reference implementation: [rosa-hcp-dedicated-vpc `terraform/11.ingress.tf`](https://github.com/redhat-rosa/rosa-hcp-dedicated-vpc/blob/main/terraform/11.ingress.tf)

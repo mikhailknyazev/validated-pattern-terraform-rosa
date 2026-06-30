@@ -27,6 +27,18 @@ Before contributing, ensure you have the following installed:
 - **ShellCheck** - For shell script linting
 - **shfmt** - For shell script formatting
 - **TFLint** - For Terraform linting (optional, but recommended)
+- **Python 3.12+** and **MkDocs Material** - For documentation preview (`pip install -r requirements-docs.txt`)
+
+### Documentation
+
+User-facing documentation is published with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) to GitHub Pages.
+
+- **Edit content in place** — module READMEs under `modules/` and guides under `docs/` are symlinked into the site; edit the source file, not the symlink.
+- **Local preview:** `make docs-preview` (creates `.venv-docs`, installs deps, serves at http://127.0.0.1:8000)
+- **Build check:** `make docs-build` (strict link checking — run before PRs that touch docs)
+- **Forks:** override `site_url` in `mkdocs.yml` if publishing docs from your fork.
+
+Internal docs (`PLAN.md`, `docs/TODO.md`, `AGENTS.md`) are not included in the published site navigation.
 
 ### Installation
 

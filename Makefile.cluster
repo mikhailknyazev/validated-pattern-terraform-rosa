@@ -23,6 +23,7 @@ check-cluster:
 .PHONY: show-endpoints show-credentials show-timing login verify
 .PHONY: tunnel-start tunnel-stop tunnel-status bastion-connect
 .PHONY: vpn-config vpn-start vpn-stop vpn-status bootstrap bootstrap-spoke teardown-spoke ensure-tunnel
+.PHONY: validate validate-terraform validate-account validate-network validate-prereqs
 
 help: ## Show this help message
 	@$(SCRIPT_DIR)/utils/get-network-config.sh $(CLUSTER_DIR) >/dev/null 2>&1 || true; \
@@ -56,6 +57,12 @@ help: ## Show this help message
 	echo "  make cluster.$(CLUSTER_NAME).show-timing      Show cluster creation timing"; \
 	echo "  make cluster.$(CLUSTER_NAME).login             Login to cluster using oc CLI"; \
 	echo "  make cluster.$(CLUSTER_NAME).verify           Verify cluster deployment and GitOps"; \
+	echo ""; \
+	echo "$(GREEN)Pre-deployment validation:$(NC)"; \
+	echo "  make cluster.$(CLUSTER_NAME).validate          Validate prerequisites (account + network from tfvars)"; \
+	echo "  make cluster.$(CLUSTER_NAME).validate-account  Account, tools, and OCM role only"; \
+	echo "  make cluster.$(CLUSTER_NAME).validate-network  VPC/subnets/endpoints only"; \
+	echo "  make cluster.$(CLUSTER_NAME).validate-terraform  Terraform syntax (terraform validate)"; \
 	echo ""; \
 	echo "$(GREEN)Bastion & Tunnel (deprecated):$(NC)"; \
 	echo "  make cluster.$(CLUSTER_NAME).tunnel-start      Start sshuttle via bastion (manual use)"; \
@@ -305,8 +312,38 @@ bastion-connect: check-cluster
 		aws ssm start-session --target $$BASTION_ID --region $$REGION || \
 		(echo "$(YELLOW)Failed to connect. Check AWS credentials and bastion status.$(NC)" && exit 1)
 
-# Validate
-validate:
+# Pre-deployment validation (distinct from terraform validate below)
+validate: check-cluster ## Validate prerequisites before apply (account + network from tfvars)
+	@$(SCRIPT_DIR)/validate/prereqs.sh $(CLUSTER_NAME)
+
+validate-prereqs: validate ## Alias for validate (backward compatible)
+
+validate-account: check-cluster ## Validate account, tools, and OCM role only
+	@bash -c 'source $(SCRIPT_DIR)/common.sh; REGION=$$(get_tfvar "$(CLUSTER_DIR)" region us-east-1); $(SCRIPT_DIR)/validate/account.sh --region "$$REGION"'
+
+validate-network: check-cluster ## Validate VPC for BYO or Terraform-managed network
+	@bash -c 'source $(SCRIPT_DIR)/common.sh; \
+		CLUSTER_DIR="$(CLUSTER_DIR)"; \
+		REGION=$$(get_tfvar "$$CLUSTER_DIR" region us-east-1); \
+		ZERO=$$(get_tfvar "$$CLUSTER_DIR" zero_egress false); \
+		MULTI=$$(get_tfvar "$$CLUSTER_DIR" multi_az true); \
+		VPC_ID=$$(get_tfvar "$$CLUSTER_DIR" existing_vpc_id ""); \
+		ARGS="--region $$REGION"; \
+		[[ "$$ZERO" == "true" ]] && ARGS="$$ARGS --zero-egress"; \
+		[[ "$$MULTI" == "true" ]] && ARGS="$$ARGS --multi-az" || ARGS="$$ARGS --single-az"; \
+		if [[ -n "$$VPC_ID" ]]; then \
+			ARGS="$$ARGS --vpc-id $$VPC_ID"; \
+		elif [ -d "$(TERRAFORM_DIR)/.terraform" ]; then \
+			TF_VPC=$$(cd $(TERRAFORM_DIR) && terraform output -raw vpc_id 2>/dev/null || true); \
+			[[ -n "$$TF_VPC" && "$$TF_VPC" != "null" ]] && ARGS="$$ARGS --vpc-id $$TF_VPC"; \
+		fi; \
+		if echo "$$ARGS" | grep -q vpc-id; then \
+			$(SCRIPT_DIR)/validate/byo-network.sh $$ARGS; \
+		else \
+			echo "$(YELLOW)Skipping VPC validation — no vpc-id (BYO: set existing_vpc_id; full-stack: init/apply first)$(NC)"; \
+		fi'
+
+validate-terraform: ## Validate Terraform configuration syntax
 	@cd $(TERRAFORM_DIR) && terraform init -backend=false && terraform validate
 
 # Format

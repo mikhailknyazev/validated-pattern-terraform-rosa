@@ -1,6 +1,6 @@
 .PHONY: help init plan apply destroy test clean
 .PHONY: init-all plan-all install-provider
-.PHONY: fmt fmt-check validate lint lint-fix
+.PHONY: fmt fmt-check validate lint lint-fix docs-venv docs-preview docs-serve docs-build
 .PHONY: tf-fmt tf-fmt-check tf-validate tf-validate-modules tf-validate-root
 .PHONY: sh-fmt sh-fmt-check sh-lint sh-lint-fix
 .DEFAULT_GOAL := help
@@ -264,6 +264,35 @@ lint-fix: tf-fmt sh-fmt ## Fix auto-fixable linting issues (Terraform and shell 
 
 test: tf-fmt-check tf-validate sh-lint sh-fmt-check  ## Run all tests (format check, validation, and linting)
 	@echo "$(GREEN)✓ All tests passed$(NC)"
+
+# Documentation (MkDocs Material)
+VENV_DOCS ?= .venv-docs
+DOCS_PYTHON := $(VENV_DOCS)/bin/python
+DOCS_MKDOCS := $(VENV_DOCS)/bin/mkdocs
+DOCS_PIP := $(VENV_DOCS)/bin/pip
+
+docs-venv: ## Create docs virtualenv and install requirements-docs.txt
+	@if ! command -v python3 >/dev/null 2>&1; then \
+		echo "$(YELLOW)Error: python3 is required for documentation preview$(NC)"; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(VENV_DOCS)" ]; then \
+		echo "$(BLUE)Creating docs virtualenv at $(VENV_DOCS)...$(NC)"; \
+		python3 -m venv "$(VENV_DOCS)"; \
+	fi
+	@$(DOCS_PIP) install -q -r requirements-docs.txt
+	@echo "$(GREEN)✓ Docs dependencies ready$(NC)"
+
+docs-preview: docs-venv ## Set up docs deps and serve at http://127.0.0.1:8000
+	@echo "$(BLUE)Documentation preview: http://127.0.0.1:8000/vp-terraform-rosa/$(NC)"
+	@echo "$(BLUE)Press Ctrl+C to stop$(NC)"
+	@$(DOCS_MKDOCS) serve
+
+docs-serve: docs-preview ## Alias for docs-preview
+
+docs-build: docs-venv ## Build documentation site (strict link checking)
+	@$(DOCS_MKDOCS) build --strict
+	@echo "$(GREEN)✓ Documentation built successfully$(NC)"
 
 # Install OpenShift Provider
 PROVIDER_VERSION ?= 0.1.2

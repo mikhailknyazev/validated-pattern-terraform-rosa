@@ -256,6 +256,6 @@ The script outputs JSON status messages:
 
 ## References
 
-- Reference Implementation: `./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/9.bootstrap.tf`
+- Reference implementation: [rosa-hcp-dedicated-vpc `terraform/9.bootstrap.tf`](https://github.com/redhat-rosa/rosa-hcp-dedicated-vpc/blob/main/terraform/9.bootstrap.tf)
 - Helm Repository: https://rh-mobb.github.io/validated-pattern-helm-charts/
 - OpenShift GitOps Documentation: https://docs.redhat.com/en/documentation/red_hat_openshift_gitops/

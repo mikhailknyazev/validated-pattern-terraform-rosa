@@ -35,6 +35,3 @@ module "cluster_timing" {
 | duration_human | Human-readable duration (e.g., '15m 32s'). |
 | timing_summary | Complete timing summary for the stage. |
 
-## Reference
-
-Based on: `./reference/rosa-tf/modules/utility/timing/`

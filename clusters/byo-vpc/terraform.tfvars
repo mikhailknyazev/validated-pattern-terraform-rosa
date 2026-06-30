@@ -1,8 +1,10 @@
 # BYO VPC (Bring Your Own) Cluster Configuration
 #
 # With network_type = "existing", NO network module runs. You must create the VPC,
-# subnets, VPC endpoints, NAT gateways, route tables, and subnet tags BEFORE running
-# Terraform. This Terraform config only creates IAM, cluster, and optional bastion.
+# subnets, VPC endpoints, route tables, and subnet tags BEFORE running Terraform.
+# This Terraform config creates IAM, cluster, and optional Client VPN.
+#
+# Full requirements: docs/prerequisites/byo/network.md (published site: Prerequisites → BYO Network)
 #
 # =============================================================================
 # PREREQUISITES - Create These Before Running Terraform
@@ -10,24 +12,25 @@
 #
 # 1. VPC with enable_dns_support and enable_dns_hostnames enabled
 # 2. Private subnets (for worker nodes) tagged: kubernetes.io/role/internal-elb = "1"
-# 3. Public subnets (for load balancers, if using public API) tagged: kubernetes.io/role/elb = "1"
-# 4. NAT gateway(s) for internet egress (unless zero_egress = true)
-# 5. VPC endpoints (minimum for standard clusters):
-#    - S3 (gateway)
-#    - ECR API, ECR DKR, STS, EC2, KMS (interface)
-# 6. Security group for interface VPC endpoints: inbound from VPC CIDR
+# 3. Public subnets (for external LBs, if private = false) tagged: kubernetes.io/role/elb = "1"
 #
-# Quick start: rosa create network (ROSA CLI v1.2.48+) creates a compliant VPC via
-# CloudFormation. See: https://access.redhat.com/articles/7096266
+# Standard (zero_egress = false):
+#   - NAT gateway(s) on private subnet route tables for internet egress
+#   - VPC endpoints recommended: S3 (gateway), STS, ECR API, ECR DKR (interface)
 #
-# What rosa create network creates:
-#   - VPC, public/private subnets (1-4 AZs), ROSA tags
-#   - Internet gateway, zonal NAT gateways
-#   - S3 gateway endpoint, interface endpoints: EC2, KMS, STS, ECR API, ECR DKR
+# Zero egress (zero_egress = true) — see clusters/byo-vpc-egress-zero/ example:
+#   - NO NAT or IGW routes on private subnets
+#   - Required VPC endpoints: S3 (gateway), STS, ECR API, ECR DKR (interface, PrivateDnsEnabled)
+#   - Optional: CloudWatch Logs + Monitoring endpoints if control_plane_log_cloudwatch_enabled = true
+#   - EC2 and KMS endpoints in customer VPC are NOT required for ROSA HCP
 #
-# For zero-egress BYO VPC, additionally create:
-#   - CloudWatch Logs, CloudWatch Monitoring VPC endpoints
-#   - Remove NAT gateways from private subnet route tables
+# 4. Security group for interface VPC endpoints: inbound HTTPS (443) from VPC CIDR
+#
+# Validate before apply:
+#   make cluster.<name>.validate
+#
+# Quick start: rosa create network (ROSA CLI v1.2.48+) — then adjust for zero egress if needed.
+# See: https://access.redhat.com/articles/7096266
 #
 # =============================================================================
 

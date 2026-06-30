@@ -2,6 +2,8 @@
 
 Production-grade Terraform repository for deploying Red Hat OpenShift Service on AWS (ROSA) with Hosted Control Planes (HCP).
 
+**Documentation:** [https://rh-mobb.github.io/vp-terraform-rosa/](https://rh-mobb.github.io/vp-terraform-rosa/) — prerequisites, enablement guide, module reference, and validation scripts. Local preview: `make docs-preview`.
+
 ## Overview
 
 This repository provides reusable Terraform modules and example configurations for deploying ROSA HCP clusters with different network topologies and security postures. The architecture follows a **Directory-Per-Cluster** pattern to ensure state isolation and proper lifecycle management.
@@ -15,121 +17,23 @@ The repository is organized around infrastructure modules:
 
 ## Quick Start
 
-### Prerequisites
+See [Quick Start](docs/getting-started/quick-start.md) and [Account Prerequisites](docs/prerequisites/account.md) in the documentation site.
 
-- Terraform >= 1.5.0
-- AWS CLI configured with appropriate credentials
-- RHCS API authentication (see [RHCS API Authentication](#rhcs-api-authentication) - set credentials before using make)
-- `oc` CLI installed (for cluster access)
-- For private/egress-zero clusters: **AWS Client VPN** (recommended) or `sshuttle` with bastion - see [Accessing Private Clusters](#aws-client-vpn-for-private-clusters)
-
-### RHCS API Authentication
-
-Set credentials **before** using any `make` or Terraform commands. This project does not manage RHCS credentials.
-
-**Option 1: Token (offline/refresh token)**
-
-- Get an offline token from https://console.redhat.com/openshift/token/rosa/show
-- Set `RHCS_TOKEN`:
-  ```bash
-  export RHCS_TOKEN="your-offline-token"
-  ```
-- Suitable for local development
-
-**Option 2: Service account (client credentials)**
-
-- Create a Red Hat Hybrid Cloud Console service account (User Management → Service accounts)
-- Add the service account to a User Access group with RBAC roles for ROSA/OCM
-- Set `RHCS_CLIENT_ID` and `RHCS_CLIENT_SECRET`:
-  ```bash
-  export RHCS_CLIENT_ID="your-client-id-uuid"
-  export RHCS_CLIENT_SECRET="your-client-secret"
-  ```
-- Suitable for CI/CD and automation
-
-**Using a credentials file (recommended):**
 ```bash
-# .rhcs_creds (add to .gitignore)
-export RHCS_TOKEN="your-token"
-# OR for service account:
-# export RHCS_CLIENT_ID="..."
-# export RHCS_CLIENT_SECRET="..."
+# 1. Authenticate (see docs/getting-started/authentication.md)
+export RHCS_CLIENT_ID="..." RHCS_CLIENT_SECRET="..."
 
-source .rhcs_creds
-make cluster.public.plan
-```
+# 2. Validate prerequisites
+make cluster.public.validate
 
-### Deploy a Public Cluster
-
-**1. Set required environment variables:**
-```bash
-# RHCS authentication (choose one option from above)
-export RHCS_TOKEN="your-rhcs-token"   # or use service account variables
-export TF_VAR_admin_password="your-secure-password"  # Optional, for admin user
-```
-
-**2. Initialize, plan, and apply:**
-
-Using Makefile (recommended for local development):
-```bash
-# Initialize Terraform
+# 3. Deploy
 make cluster.public.init
-
-# Review the plan
 make cluster.public.plan
-
-# Apply the configuration
 make cluster.public.apply
-```
-
-Or using scripts directly (recommended for CI/CD):
-```bash
-# Initialize infrastructure
-./scripts/cluster/init-infrastructure.sh public
-
-# Plan infrastructure
-./scripts/cluster/plan-infrastructure.sh public
-
-# Apply infrastructure
-./scripts/cluster/apply-infrastructure.sh public
-```
-
-**3. Access the cluster:**
-```bash
-# Show cluster endpoints
-make cluster.public.show-endpoints
-# or
-./scripts/info/show-endpoints.sh public
-
-# Login to the cluster
-make cluster.public.login
-# or
-./scripts/info/login.sh public
-
-# Show admin credentials
-make cluster.public.show-credentials
-# or
-./scripts/info/show-credentials.sh public
-```
-
-**4. Bootstrap GitOps (after cluster is ready):**
-```bash
-# Bootstrap GitOps operator on the cluster
 make cluster.public.bootstrap
 ```
 
-**5. Destroy the cluster:**
-```bash
-# Destroy all resources (with confirmation)
-make cluster.public.destroy
-# or
-./scripts/cluster/destroy-infrastructure.sh public
-
-# Sleep cluster (preserves DNS, admin password, IAM, etc. for easy restart)
-make cluster.public.sleep
-# or
-AUTO_APPROVE=true ./scripts/cluster/cleanup-infrastructure.sh public
-```
+Example clusters: `public`, `egress-zero`, `byo-vpc`, `byo-vpc-egress-zero` — see [clusters/README.md](clusters/README.md).
 
 ## Repository Structure
 
@@ -148,9 +52,11 @@ rosa-hcp-infrastructure/
 │       └── client-vpn/         # AWS Client VPN for private cluster access (recommended)
 └── clusters/                   # Cluster configurations
     ├── public/                 # Example public cluster (reference)
-    │   └── terraform.tfvars   # Cluster-specific variables
-    └── egress-zero/            # Example egress-zero cluster (reference)
-        └── terraform.tfvars   # Cluster-specific variables
+    │   └── terraform.tfvars
+    ├── egress-zero/            # Example egress-zero cluster (reference)
+    │   └── terraform.tfvars
+    ├── byo-vpc/                # BYO VPC example
+    └── byo-vpc-egress-zero/    # BYO VPC + zero egress
 ```
 
 ### Infrastructure Modules
@@ -171,662 +77,49 @@ Each module is **self-contained** and **reusable**:
 - **Documentation**: Complete README.md with usage examples
 - **State Isolation**: Modules can be used independently or composed together
 
-## Using Modules to Compose Custom Infrastructure
+## Makefile and scripts
 
-The modules are designed to be **composable** and **reusable**. You can mix and match modules to create custom infrastructure configurations.
+Use `make cluster.<name>.<operation>` — see `make help` and [scripts/README.md](scripts/README.md).
 
-### Basic Module Composition
-
-Here's how the example clusters compose modules:
-
-```hcl
-# terraform/10-main.tf
-module "network" {
-  source = "../../modules/infrastructure/network-public"
-
-  name_prefix = var.cluster_name
-  vpc_cidr    = var.vpc_cidr
-  multi_az    = var.multi_az
-  tags        = var.tags
-}
-
-module "iam" {
-  source = "../../modules/infrastructure/iam"
-
-  cluster_name         = var.cluster_name
-  account_role_prefix  = var.cluster_name
-  operator_role_prefix = var.cluster_name
-  tags                 = var.tags
-}
-
-module "cluster" {
-  source = "../../modules/infrastructure/cluster"
-
-  cluster_name       = var.cluster_name
-  region             = var.region
-  vpc_id             = module.network.vpc_id
-  subnet_ids         = concat(module.network.private_subnet_ids, module.network.public_subnet_ids)
-  installer_role_arn = module.iam.installer_role_arn
-  support_role_arn   = module.iam.support_role_arn
-  worker_role_arn    = module.iam.worker_role_arn
-  oidc_config_id     = module.iam.oidc_config_id
-  oidc_endpoint_url  = module.iam.oidc_endpoint_url
-  # ... other cluster configuration
-}
-```
-
-The cluster module provides GitOps bootstrap functionality via a script that deploys the OpenShift GitOps operator and configures it to use your cluster-config Git repository. The bootstrap script is run manually after cluster deployment using `make cluster.<name>.bootstrap`.
-
-### Multi-Team Scenarios
-
-The modules support **separation of concerns** where different teams own different aspects of the infrastructure:
-
-#### Scenario 1: Network Team Owns VPC
-
-**Network Team** (`clusters/production/network/`):
-```hcl
-# Network team creates and manages VPC
-module "network" {
-  source = "../../../modules/network-private"
-
-  name_prefix = "prod-network"
-  vpc_cidr    = "10.0.0.0/16"
-  multi_az    = true
-  tags = {
-    Team = "Network"
-    Environment = "Production"
-  }
-}
-
-# Outputs VPC details for other teams
-output "vpc_id" {
-  value = module.network.vpc_id
-}
-
-output "private_subnet_ids" {
-  value = module.network.private_subnet_ids
-}
-```
-
-**Platform Team** (`clusters/production/cluster/`):
-```hcl
-# Platform team receives network team's outputs as input variables
-# In a multi-team scenario, network outputs would be passed via:
-# - Environment variables: TF_VAR_vpc_id, TF_VAR_subnet_ids, etc.
-# - Or a shared tfvars file generated from network team's outputs
-
-module "iam" {
-  source = "../../../modules/iam"
-  # ... IAM configuration
-}
-
-module "cluster" {
-  source = "../../../modules/cluster"
-
-  vpc_id     = var.vpc_id      # From network team's outputs
-  subnet_ids = var.subnet_ids  # From network team's outputs
-  # ... cluster configuration
-}
-```
-
-**Note**: In a multi-team scenario, teams would coordinate via:
-- **Shared state outputs**: Network team exports outputs, platform team imports as variables
-- **CI/CD pipeline**: Infrastructure outputs → Platform team inputs
-- **Terraform workspaces**: Separate workspaces with output sharing
-
-#### Scenario 2: IAM Team Owns Roles
-
-**IAM Team** (`clusters/production/iam/`):
-```hcl
-# IAM team creates and manages all ROSA IAM resources
-module "iam" {
-  source = "../../../modules/iam"
-
-  cluster_name         = "production"
-  account_role_prefix  = "prod"
-  operator_role_prefix = "prod"
-  tags = {
-    Team = "IAM"
-    Environment = "Production"
-  }
-}
-
-# Outputs role ARNs for platform team
-output "installer_role_arn" {
-  value = module.iam.installer_role_arn
-}
-
-output "worker_role_arn" {
-  value = module.iam.worker_role_arn
-}
-
-output "oidc_config_id" {
-  value = module.iam.oidc_config_id
-}
-```
-
-**Platform Team** (`clusters/production/cluster/`):
-```hcl
-# Platform team receives IAM team's outputs as input variables
-# IAM outputs would be passed via environment variables or tfvars file
-
-module "cluster" {
-  source = "../../../modules/cluster"
-
-  installer_role_arn = var.installer_role_arn  # From IAM team's outputs
-  worker_role_arn    = var.worker_role_arn     # From IAM team's outputs
-  oidc_config_id     = var.oidc_config_id      # From IAM team's outputs
-  # ... cluster configuration
-}
-```
-
-#### Scenario 3: Complete Separation (Network, IAM, Cluster)
-
-**Network Team** (`clusters/production/network/terraform.tfstate`):
-- Manages VPC, subnets, VPC endpoints
-- Outputs: `vpc_id`, `subnet_ids`, `vpc_cidr`
-
-**IAM Team** (`clusters/production/iam/terraform.tfstate`):
-- Manages OIDC, account roles, operator roles
-- Outputs: `installer_role_arn`, `worker_role_arn`, `oidc_config_id`, `oidc_endpoint_url`
-
-**Platform Team** (`clusters/production/cluster/terraform.tfstate`):
-- Manages cluster deployment
-- Reads from both network and IAM remote states
-- Composes modules using outputs from other teams
-
-### Creating Your Own Cluster Configuration
-
-**1. Create a new cluster directory:**
-```bash
-mkdir -p clusters/my-cluster
-cd clusters/my-cluster
-```
-
-**2. Create `00-providers.tf`:**
-```hcl
-terraform {
-  required_version = ">= 1.5.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 6.0"
-    }
-    rhcs = {
-      source  = "terraform-redhat/rhcs"
-      version = "~> 1.7.7"
-    }
-  }
-
-  # Optional: Configure remote state backend
-  # backend "s3" {
-  #   bucket         = "my-org-terraform-state"
-  #   key            = "my-cluster/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "terraform-locks"
-  #   encrypt        = true
-  # }
-}
-
-provider "aws" {
-  region = var.region
-}
-
-provider "rhcs" {
-  url = "https://api.openshift.com"
-}
-# RHCS auth: set RHCS_TOKEN or RHCS_CLIENT_ID+RHCS_CLIENT_SECRET before make
-```
-
-**3. Create `01-variables.tf`:**
-```hcl
-variable "cluster_name" {
-  description = "Name of the ROSA HCP cluster"
-  type        = string
-  nullable    = false
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-  nullable    = false
-}
-
-# Add other variables as needed
-```
-
-**4. Create `10-main.tf` with module composition:**
-```hcl
-# Compose modules to create your infrastructure
-module "network" {
-  source = "../../modules/network-public"  # or network-private
-
-  name_prefix = var.cluster_name
-  vpc_cidr    = "10.0.0.0/16"
-  multi_az    = true
-  tags = {
-    Environment = "production"
-    ManagedBy   = "Terraform"
-  }
-}
-
-module "iam" {
-  source = "../../modules/iam"
-
-  cluster_name         = var.cluster_name
-  account_role_prefix  = var.cluster_name
-  operator_role_prefix = var.cluster_name
-  tags = {
-    Environment = "production"
-  }
-}
-
-module "cluster" {
-  source = "../../modules/cluster"
-
-  cluster_name       = var.cluster_name
-  region             = var.region
-  vpc_id             = module.network.vpc_id
-  subnet_ids         = module.network.private_subnet_ids
-  installer_role_arn = module.iam.installer_role_arn
-  support_role_arn   = module.iam.support_role_arn
-  worker_role_arn    = module.iam.worker_role_arn
-  oidc_config_id     = module.iam.oidc_config_id
-  oidc_endpoint_url  = module.iam.oidc_endpoint_url
-  vpc_cidr           = module.network.vpc_cidr_block
-  availability_zones = module.network.private_subnet_azs
-
-  # Cluster configuration
-  private    = true
-  multi_az   = true
-  # ... other cluster settings
-}
-```
-
-**5. Create `terraform.tfvars`:**
-```hcl
-cluster_name = "my-cluster"
-region       = "us-east-1"
-# RHCS auth: set RHCS_TOKEN or RHCS_CLIENT_ID+RHCS_CLIENT_SECRET before make
-```
-
-**6. Use Makefile pattern rules:**
-```bash
-# The Makefile automatically detects cluster directories
-# Just use the cluster name as the suffix
-make init.my-cluster
-make plan.my-cluster
-make apply.my-cluster
-```
-
-## Available Modules
-
-### Network Modules
-
-- **network-public**: Public VPC with NAT Gateways
-  - Public and private subnets
-  - Zonal NAT Gateways (one per AZ)
-  - VPC endpoints (S3, ECR, STS)
-  - ROSA-required subnet tags
-
-- **network-private**: Private VPC with PrivateLink API
-  - Private subnets only
-  - VPC endpoints for all AWS services
-  - Optional Regional NAT Gateway for internet egress (default: enabled)
-  - **Zero-egress mode**: Set `zero_egress = true` to disable NAT Gateway and enable zero egress controls
-  - VPC Flow Logs support (optional, via `flow_log_s3_bucket`)
-  - ROSA-required subnet tags
-
-- **network-egress-zero**: ⚠️ **DEPRECATED** - Use `network-private` with `zero_egress = true`
-  - This module remains for backward compatibility but is deprecated
-  - New deployments should use the consolidated `network-private` module
-
-### Core Modules
-
-- **iam**: IAM roles, OIDC configuration, KMS keys, and operator IAM roles
-  - Account roles (Installer, Support, Worker)
-  - Operator roles (Ingress, Control Plane, CSI, etc.)
-  - OIDC configuration and provider
-  - **KMS keys** (EBS, EFS, ETCD encryption)
-  - **Storage IAM resources** (KMS CSI policy, EBS CSI attachment, EFS CSI role/policy)
-  - **CloudWatch logging IAM** (audit logging and application logging)
-  - **Cert Manager IAM** (for AWS Private CA)
-  - **Secrets Manager IAM** (for ArgoCD Vault Plugin)
-  - Uses upstream `terraform-redhat/rosa-hcp/rhcs` modules
-
-- **cluster**: ROSA HCP cluster deployment
-  - Thin wrapper with organizational defaults
-  - Machine pool management
-  - Automatic version detection
-  - Machine type validation
-  - Identity provider (HTPasswd admin user) - integrated
-  - **EFS file system** (storage infrastructure that depends on cluster security groups)
-  - GitOps bootstrap script - provided (run manually via `make cluster.<name>.bootstrap`)
-  - CloudWatch audit logging configuration (IAM role from IAM module)
-  - Cluster termination protection
-
-- **bastion**: Bastion host (deprecated; use client-vpn)
-  - SSM Session Manager support
-- **client-vpn**: AWS Client VPN endpoint for private cluster access (default for egress-zero)
-  - OpenVPN-compatible .ovpn config, mutual TLS auth
-  - Pre-installed tools (`oc`, `kubectl`)
-  - **Development/demo use only** - not for production
-
-## Scripts and Automation
-
-This repository uses bash scripts for cluster management, with a Makefile wrapper for convenience. Scripts can be called directly from CI/CD pipelines without requiring Make.
-
-### Script-Based Approach
-
-All cluster operations are implemented as bash scripts in the `scripts/` directory:
-
-- **`scripts/cluster/`**: Infrastructure and configuration management
-- **`scripts/tunnel/`**: Tunnel management for egress-zero clusters
-- **`scripts/vpn/`**: VPN config retrieval for Client VPN
-- **`scripts/utils/`**: Utility functions (password retrieval, token management, etc.)
-- **`scripts/info/`**: Cluster information and access
-
-See [scripts/README.md](scripts/README.md) for complete documentation.
-
-### Makefile Usage
-
-The Makefile provides convenient targets for managing clusters. Use **pattern syntax** for flexibility:
-
-### Pattern Syntax (Recommended)
+Common operations: `init`, `plan`, `apply`, `bootstrap`, `login`, `validate`, `validate-account`, `validate-network`, `vpn-config`, `destroy`, `sleep`.
 
 ```bash
-# Pattern: make <action>.<cluster>
-make init.public
-make plan.egress-zero
-make apply.egress-zero
-make destroy.public
-make login.egress-zero
-make tunnel-start.egress-zero
+make cluster.egress-zero.validate
+make cluster.egress-zero.apply
+make cluster.egress-zero.bootstrap
 ```
 
-### Available Actions
-
-**Cluster Management:**
-- `init.<cluster>` - Initialize infrastructure
-- `plan.<cluster>` - Plan infrastructure changes
-- `apply.<cluster>` - Apply infrastructure
-- `destroy.<cluster>` - Destroy infrastructure
-
-**Infrastructure Management:**
-- `init-infrastructure.<cluster>` - Initialize infrastructure only
-- `plan-infrastructure.<cluster>` - Plan infrastructure changes
-- `apply-infrastructure.<cluster>` - Apply infrastructure
-- `destroy-infrastructure.<cluster>` - Destroy infrastructure
-
-**GitOps:**
-- `bootstrap.<cluster>` - Bootstrap GitOps operator on cluster
-
-**Cluster Access:**
-- `login.<cluster>` - Login to cluster using `oc`
-- `show-endpoints.<cluster>` - Show API and console URLs
-- `show-credentials.<cluster>` - Show admin credentials and endpoints
-
-**Bastion & Tunnel (Egress-Zero clusters):**
-- `vpn-config.<cluster>` - Show AWS Client VPN config path and connection instructions
-- `vpn-start.<cluster>` - Start OpenVPN tunnel (auto-run before bootstrap/login)
-- `vpn-stop.<cluster>` - Stop OpenVPN tunnel
-- `vpn-status.<cluster>` - Check OpenVPN tunnel status
-- `tunnel-start.<cluster>` - Start sshuttle via bastion (deprecated; manual use)
-- `tunnel-stop.<cluster>` - Stop sshuttle tunnel
-- `tunnel-status.<cluster>` - Check sshuttle tunnel status
-- `bastion-connect.<cluster>` - Connect to bastion via SSM
-
-**Code Quality:**
-- `make fmt` - Format all Terraform files
-- `make validate` - Validate all Terraform configurations
-- `make validate-modules` - Validate all modules
-
-**Utilities:**
-- `make clean` - Clean Terraform files
-- `make init-all` - Initialize all example clusters
-- `make plan-all` - Plan all example clusters
-
-See `make help` for complete list of targets.
-
-## AWS Client VPN for Private Clusters
-
-**Recommended** for private cluster access: AWS Client VPN provides robust, cross-platform connectivity using standard OpenVPN clients (AWS VPN Client, OpenVPN, Tunnelblick). No sshuttle or bastion required.
-
-```bash
-# Enable in terraform.tfvars:
-enable_client_vpn = true
-
-# After terraform apply, get config path and instructions:
-make cluster.egress-zero.vpn-config
-
-# Import the .ovpn file into your VPN client and connect
-# Then access cluster API/console directly
-```
-
-The `.ovpn` file is written to `clusters/<cluster-name>/<cluster-name>-vpn-client.ovpn`. Cost: ~$108-150/mo (1 subnet).
-
-## Bastion Host and sshuttle (Deprecated)
-
-> **Deprecated**: The bastion host and sshuttle tunnel are no longer used by default. AWS Client VPN (above) is the default for egress-zero clusters. Bastion/sshuttle modules remain available for manual use.
-
-Egress-zero clusters previously used an optional bastion with sshuttle. This is **deprecated**—use AWS Client VPN instead. If you need bastion/sshuttle:
-
-- Set `enable_bastion = true` in terraform.tfvars
-- Run `make cluster.<name>.tunnel-start` manually (not auto-started by bootstrap/login)
-- **SSM Session Manager**: No public IP, access via AWS Systems Manager
-- **sshuttle**: Routes VPC traffic through bastion
-
-```bash
-# Manual tunnel start (requires enable_bastion=true)
-make cluster.egress-zero.tunnel-start
-make cluster.egress-zero.tunnel-stop
-make cluster.egress-zero.tunnel-status
-```
-
-See `modules/bastion/README.md` for details.
-
-## Admin User Management
-
-The cluster module includes identity provider functionality that creates a temporary admin user for initial cluster access. This is controlled by the `enable_identity_provider` variable (default: `true` when `persists_through_sleep = true`).
-
-**Configuration**:
-```hcl
-module "cluster" {
-  # ... other configuration ...
-
-  # Identity provider configuration (integrated in cluster module)
-  enable_identity_provider = true
-  admin_username           = "admin"  # Optional, defaults to "admin"
-  admin_password_for_bootstrap = var.admin_password  # Set via TF_VAR_admin_password
-  admin_group              = "cluster-admins"  # Optional, defaults to "cluster-admins"
-}
-```
-
-**Best Practice**: Set `enable_identity_provider = false` once you've configured an external identity provider (LDAP, OIDC, etc.).
-
-The admin password is stored in AWS Secrets Manager (`{cluster_name}-credentials` secret) and persists through sleep operations for easy cluster restart.
-
-## State Management
-
-Each cluster directory uses its own Terraform state for isolation:
-
-**Local State (Default):**
-```hcl
-# State stored locally in cluster directory
-# No backend configuration needed
-```
-
-**Remote State (Recommended for Production):**
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "my-org-terraform-state"
-    key            = "my-cluster/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "terraform-locks"
-    encrypt        = true
-  }
-}
-```
-
-**Multi-Team State Sharing:**
-**Multi-Team Output Sharing**:
-```hcl
-# Teams share outputs via input variables (pipeline-friendly approach)
-# Network team exports outputs, platform team receives as variables
-
-# Network team exports:
-# terraform output -json > network-outputs.json
-
-# Platform team receives via:
-# - Environment variables: TF_VAR_vpc_id, TF_VAR_subnet_ids, etc.
-# - Or tfvars file: terraform.tfvars
-# - Or CI/CD pipeline: infrastructure outputs → configuration inputs
-```
-
-**Alternative: Remote State** (if needed):
-```hcl
-# If remote state access is required, use terraform_remote_state data source
-data "terraform_remote_state" "network" {
-  backend = "s3"
-  config = {
-    bucket = "my-org-terraform-state"
-    key    = "production/network/terraform.tfstate"
-    region = "us-east-1"
-  }
-}
-```
-
-**Note**: The default approach uses input variables for better CI/CD pipeline integration and state isolation.
-
-## Security Best Practices
-
-- **Never commit secrets**: Use environment variables (`RHCS_TOKEN` or service account vars, `TF_VAR_admin_password`) or AWS Secrets Manager
-- **Least Privilege**: All IAM roles follow least-privilege principles
-- **State Encryption**: Always enable encryption for S3 backends
-- **State Locking**: Use DynamoDB for state locking in production
-- **Separate State**: Each cluster has its own state file for isolation
-
-## Destroy Protection
-
-This repository implements a **destroy protection pattern** to prevent accidental resource destruction, which is critical for production environments and organizations with strict change control processes.
-
-### How It Works
-
-By default, all resources are active and managed by Terraform. The `persists_through_sleep` variable (default: `true`) controls whether resources persist or are put to sleep. Resources are gated using the `count` meta-argument:
-
-- **When `persists_through_sleep = true` (default)**: `count = 1` → Resources exist and are managed by Terraform
-- **When `persists_through_sleep = false`**: `count = 0` → Terraform puts resources to sleep (calls provider delete methods)
-
-When you set `persists_through_sleep = false` and run `terraform apply`, Terraform sees that `count` has changed from `1` to `0`, which triggers resource destruction. This prevents accidental `terraform destroy` operations by requiring an explicit variable change.
-
-### Usage
-
-**Default Behavior (Protected):**
-```hcl
-# In terraform.tfvars
-persists_through_sleep = true  # Default - resources are active
-```
-
-**To Allow Destruction:**
-```hcl
-# In terraform.tfvars
-persists_through_sleep = false  # Puts cluster to sleep (destroys resources)
-```
-
-**Workflow for Intentional Destruction:**
-
-**Option 1: Using Makefile (Recommended)**
-```bash
-# Permanently destroy all infrastructure (uses terraform destroy)
-# Prompts for confirmation, destroys everything including preserved resources
-make cluster.<cluster>.destroy
-
-# Force destroy without confirmation prompt
-make cluster.<cluster>.destroy_force
-
-# Sleep cluster (sets persists_through_sleep=false and runs terraform apply)
-# No confirmation prompt, preserves DNS, admin password, IAM, KMS, EFS, etc.
-make cluster.<cluster>.sleep
-```
-
-**Option 2: Manual Terraform Commands**
-1. **For sleep**: Set `persists_through_sleep = false` in `terraform.tfvars` (or use `TF_VAR_persists_through_sleep=false`) and run `terraform apply` - Terraform will sleep cluster (because `count` becomes `0`)
-2. **For destroy**: Run `terraform destroy` - This destroys everything regardless of `persists_through_sleep` settings
-3. Set `persists_through_sleep = true` again (or remove the variable) for future protection
-
-### Per-Resource Overrides
-
-For fine-grained control, you can override the global `persists_through_sleep` setting for specific resource types:
-
-```hcl
-# Global setting
-persists_through_sleep = true
-
-# Per-resource overrides
-persists_through_sleep_cluster = false  # Allow sleeping cluster while preserving other resources
-persists_through_sleep_iam     = false  # Allow sleeping IAM roles while preserving OIDC
-persists_through_sleep_network = true   # Keep network active even if global is false
-```
-
-### Resources That Persist Through Sleep
-
-Some resources are **never gated** and persist even when cluster is slept:
-- **OIDC Configuration and Provider**: Shared across clusters, preserved for reuse
-- **Subnet Tags**: Read-only tags managed by ROSA (in `network-existing` module)
-
-### Benefits
-
-- **Safety**: Prevents accidental sleeps by default
-- **Compliance**: Works with permission constraints and change control processes
-- **Flexibility**: Per-resource overrides for common scenarios (e.g., sleep cluster but preserve IAM/OIDC)
-- **Bank-Ready**: Designed for enterprise environments with strict change control
-
-### Example: Sleeping a Cluster While Preserving IAM
-
-```hcl
-# terraform.tfvars
-persists_through_sleep = true
-persists_through_sleep_cluster = false  # Only cluster resources can be slept
-```
-
-This allows sleeping the cluster while preserving IAM roles and OIDC configuration for reuse with other clusters.
-
-### Sleep vs Destroy
-
-**Sleep** (`make sleep.<cluster>`) is designed for temporarily shutting down a cluster while preserving resources for easy restart:
-
-- **Preserves**:
-  - DNS domain (if `enable_persistent_dns_domain=true`) - cluster will use the same domain when recreated
-  - Admin password in AWS Secrets Manager - same credentials work after restart
-  - IAM roles and OIDC configuration - reused when cluster is recreated
-  - KMS keys and EFS (if not explicitly destroyed) - storage encryption keys preserved
-  - GitOps configurations - all cluster configs and applications are managed via GitOps, so they'll be automatically redeployed when the cluster is recreated
-
-- **Destroys**:
-  - ROSA HCP cluster (compute nodes, control plane)
-  - VPC and networking resources (unless protected)
-  - Bastion host (if created)
-
-**Important Notes**:
-- **Sleep does NOT hibernate the cluster** - it destroys the cluster resources
-- The cluster must be recreated using `make apply.<cluster>` to "wake" it
-- Since GitOps manages all important configurations and applications, they will be automatically redeployed when the cluster is recreated
-- This is ideal for cost savings (turn off clusters when not in use) while maintaining the same configuration
-
-**Destroy** (`make cluster.<cluster>.destroy`) is for permanent removal and prompts for confirmation. Use `make cluster.<cluster>.destroy_force` to skip the confirmation prompt.
+## Further reading
+
+| Topic | Document |
+|-------|----------|
+| Prerequisites (account, full-stack, BYO) | [docs/prerequisites/index.md](docs/prerequisites/index.md) |
+| Enablement (three-repository pattern) | [docs/deployment/enablement.md](docs/deployment/enablement.md) |
+| Cluster examples | [clusters/README.md](clusters/README.md) |
+| Module reference | [docs/modules/cluster.md](docs/modules/cluster.md) |
+| Validation scripts | [docs/operations/validation.md](docs/operations/validation.md) |
+| Egress-zero GitOps | [docs/egress-zero-gitops.md](docs/egress-zero-gitops.md) |
+| CI/CD | [docs/CI_CD.md](docs/CI_CD.md) |
+
+Local docs preview: `make docs-preview`
 
 ## Documentation
 
-- **[docs/ENABLEMENT.md](docs/ENABLEMENT.md)** - Implementation guide for the three-repository pattern (infrastructure, cluster-config, Helm charts)
-- **[PLAN.md](PLAN.md)** - Detailed implementation plan and architecture decisions
-- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
-- **[docs/TODO.md](docs/TODO.md)** - Tracking of features from reference implementations
-- **[docs/improvements/ingress.md](docs/improvements/ingress.md)** - Ingress controller implementation plan
-- **Module READMEs** - See `modules/*/README.md` for module-specific documentation
-- **[.cursorrules](.cursorrules)** - Development guidelines and best practices
+**Published site:** [https://rh-mobb.github.io/vp-terraform-rosa/](https://rh-mobb.github.io/vp-terraform-rosa/)
+
+| Resource | Path |
+|----------|------|
+| Documentation home | [docs/index.md](docs/index.md) |
+| Prerequisites | [docs/prerequisites/index.md](docs/prerequisites/index.md) |
+| Enablement guide | [docs/deployment/enablement.md](docs/deployment/enablement.md) |
+| Module reference | [docs/modules/cluster.md](docs/modules/cluster.md) |
+| Validation scripts | [docs/operations/validation.md](docs/operations/validation.md) |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+Internal (not on published site): [PLAN.md](PLAN.md), [docs/TODO.md](docs/TODO.md)
+
+Local preview: `make docs-preview`
 
 ## Module Status
 

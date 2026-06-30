@@ -9,7 +9,7 @@ Implementation guide for deploying Red Hat OpenShift Service on AWS (ROSA) with 
 - All three repositories are rehomed into your organization's Git
 - Helm charts are forked and published to an organization-owned chart repository (not the public `rh-mobb` GitHub Pages default)
 
-For a comparison with alternative repository layouts, see [comparison-with-reference.md](comparison-with-reference.md). This pattern favors per-cluster state isolation and composable modules over pre-baked environment stacks.
+This pattern favors per-cluster state isolation and composable modules over pre-baked environment stacks.
 
 ---
 
@@ -89,7 +89,7 @@ flowchart TB
   BootstrapVals --> gitopsLayer
 ```
 
-Terraform creates AWS infrastructure and generates Helm values for bootstrap. GitOps deploys Kubernetes resources and ongoing cluster configuration. See [PLAN.md](../PLAN.md) for the full architecture rationale.
+Terraform creates AWS infrastructure and generates Helm values for bootstrap. GitOps deploys Kubernetes resources and ongoing cluster configuration. See [PLAN.md](../../PLAN.md) for the full architecture rationale.
 
 ---
 
@@ -99,13 +99,13 @@ Terraform creates AWS infrastructure and generates Helm values for bootstrap. Gi
 
 | Prerequisite | Notes |
 |--------------|-------|
-| Terraform >= 1.5.0 | See [terraform/00-providers.tf](../terraform/00-providers.tf) |
+| Terraform >= 1.5.0 | See [terraform/00-providers.tf](../../terraform/00-providers.tf) |
 | AWS CLI | Configured with permissions for VPC, IAM, ROSA, Secrets Manager |
-| `oc`, `helm`, `jq` | Required for bootstrap; see [README-bootstrap-gitops.md](../scripts/cluster/README-bootstrap-gitops.md) |
+| `oc`, `helm`, `jq` | Required for bootstrap; see [README-bootstrap-gitops.md](../../scripts/cluster/README-bootstrap-gitops.md) |
 | OCM service account (recommended) | For Terraform and CI/CD — see [OCM service accounts](#ocm-service-accounts-recommended) below |
-| Personal RHCS token (dev only) | Offline token for local testing — [README.md](../README.md#rhcs-api-authentication) |
+| Personal RHCS token (dev only) | Offline token for local testing — [README.md](../../README.md#rhcs-api-authentication) |
 | ROSA subscription / OCM access | [ROSA HCP documentation](https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/) |
-| Client VPN (private/egress-zero) | [clusters/README.md](../clusters/README.md#vpn-tunnel-requirement) |
+| Client VPN (private/egress-zero) | [clusters/README.md](../../clusters/README.md#vpn-tunnel-requirement) |
 
 ### OCM service accounts (recommended)
 
@@ -150,7 +150,7 @@ export RHCS_CLIENT_SECRET="your-client-secret"
 # Do not set RHCS_TOKEN when using a service account
 ```
 
-Store these in `.rhcs_creds` (gitignored) or your CI/CD secret store. See [README.md](../README.md#rhcs-api-authentication).
+Store these in `.rhcs_creds` (gitignored) or your CI/CD secret store. See [README.md](../../README.md#rhcs-api-authentication).
 
 **Personal offline tokens** (`RHCS_TOKEN`) are acceptable for short local experiments only. Do not use them for production clusters or shared automation.
 
@@ -250,10 +250,10 @@ flowchart TD
 ### 3a. Repository 1: Infrastructure (this repo)
 
 1. Fork or copy this repository into your organization (GitHub Enterprise, GitLab, Bitbucket, etc.)
-2. Replace example cluster directories under [clusters/](../clusters/) with your naming convention, e.g. `clusters/<org>-<env>/`
-3. Configure remote state (S3 + DynamoDB) — see [clusters/README.md](../clusters/README.md#backend-configuration) and [CI_CD.md](CI_CD.md)
-4. Pin provider versions in [terraform/00-providers.tf](../terraform/00-providers.tf)
-5. Modules are already in-repo under [modules/infrastructure/](../modules/infrastructure/) — no external module registry required
+2. Replace example cluster directories under [clusters/](../../clusters/) with your naming convention, e.g. `clusters/<org>-<env>/`
+3. Configure remote state (S3 + DynamoDB) — see [clusters/README.md](../../clusters/README.md#backend-configuration) and [CI/CD guide](../guides/ci-cd.md)
+4. Pin provider versions in [terraform/00-providers.tf](../../terraform/00-providers.tf)
+5. Modules are already in-repo under [modules/infrastructure/](../../modules/infrastructure/) — no external module registry required
 
 **Create a cluster directory:**
 
@@ -270,7 +270,7 @@ See [Composable cluster configuration](#composable-cluster-configuration) for co
 ### 3b. Repository 2: cluster-config
 
 1. Fork [rh-mobb/rosa-cluster-config](https://github.com/rh-mobb/rosa-cluster-config) into your organization
-2. Create the directory layout expected by ArgoCD (derived from [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl)):
+2. Create the directory layout expected by ArgoCD (derived from [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl)):
 
 ```mermaid
 flowchart TB
@@ -300,7 +300,7 @@ ArgoCD resolves `gitPathFile` relative to that path:
 - AD/LDAP groups for RBAC
 - Ingress hostnames and TLS
 - cert-manager issuer configuration
-- ClusterLogForwarder and monitoring — see [improvements/ingress.md](improvements/ingress.md) for ingress examples
+- ClusterLogForwarder and monitoring — see [improvements/ingress.md](../guides/improvements/ingress.md) for ingress examples
 
 ### 3c. Repository 3: Helm charts (always fork)
 
@@ -343,7 +343,7 @@ flowchart LR
   SpokeChart[cluster-bootstrap-acm-spoke] --> HubReg[cluster-bootstrap-acm-hub-registration]
 ```
 
-**Version pinning:** Chart versions are hardcoded in [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl):
+**Version pinning:** Chart versions are hardcoded in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl):
 
 | Chart | Pinned version |
 |-------|----------------|
@@ -355,14 +355,14 @@ Align your fork with these versions, or update the template in your infrastructu
 
 **Override Helm repo URL** (not exposed at root `terraform.tfvars` today):
 
-- Edit `helm_repo_url` default in [modules/infrastructure/cluster/01-variables.tf](../modules/infrastructure/cluster/01-variables.tf), **or**
-- Set `HELM_REPO_URL` at bootstrap time — see [README-bootstrap-gitops.md](../scripts/cluster/README-bootstrap-gitops.md)
+- Edit `helm_repo_url` default in [modules/infrastructure/cluster/01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf), **or**
+- Set `HELM_REPO_URL` at bootstrap time — see [README-bootstrap-gitops.md](../../scripts/cluster/README-bootstrap-gitops.md)
 
 ### GitOps CMP tools container image
 
 The `cluster-bootstrap` and `cluster-bootstrap-acm-spoke` charts configure an Argo CD repo-server **ConfigManagementPlugin (CMP) sidecar** named `avp`. That sidecar runs `helm`, `argocd-vault-plugin`, `find`, `git`, and related tools so Argo CD can render Application sources marked `plugin: true` in cluster-config (for example AutoNode charts that use AVP with AWS Secrets Manager).
 
-**Upstream image** (multi-arch, built from [hack/docker/gitops-tools/](../hack/docker/gitops-tools/)):
+**Upstream image** (multi-arch, built from [hack/docker/gitops-tools/](../../hack/docker/gitops-tools/)):
 
 ```text
 ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:<tag>
@@ -401,10 +401,10 @@ flowchart LR
      docker://808082629126.dkr.ecr.us-east-1.amazonaws.com/rosa/gitops-tools:latest
    ```
 
-2. Point Terraform bootstrap values at the mirrored image — set `gitops_tools_image` in the cluster module ([01-variables.tf](../modules/infrastructure/cluster/01-variables.tf)), which flows into `defaultImage` in both bootstrap templates:
+2. Point Terraform bootstrap values at the mirrored image — set `gitops_tools_image` in the cluster module ([01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)), which flows into `defaultImage` in both bootstrap templates:
 
-   - [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) — hub and standalone (`cluster-bootstrap`)
-   - [spoke-values.yaml.tftpl](../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) — ACM spoke (`cluster-bootstrap-acm-spoke`)
+   - [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) — hub and standalone (`cluster-bootstrap`)
+   - [spoke-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) — ACM spoke (`cluster-bootstrap-acm-spoke`)
 
    Example module override:
 
@@ -418,7 +418,7 @@ flowchart LR
 
 4. Re-run bootstrap (or apply the rendered ArgoCD CR) and hard-refresh plugin-based Applications if the repo-server image changed after initial install.
 
-For zero-egress Git source mirroring (separate from this container image), see [egress-zero-gitops.md](egress-zero-gitops.md).
+For zero-egress Git source mirroring (separate from this container image), see [egress-zero GitOps guide](../guides/egress-zero-gitops.md).
 
 ---
 
@@ -428,8 +428,8 @@ For zero-egress Git source mirroring (separate from this container image), see [
 
 | Provider | Version constraint | Source |
 |----------|-------------------|--------|
-| `terraform-redhat/rhcs` | `~> 1.7` | [terraform/00-providers.tf](../terraform/00-providers.tf) |
-| `hashicorp/aws` | `~> 6.0` | [terraform/00-providers.tf](../terraform/00-providers.tf) |
+| `terraform-redhat/rhcs` | `~> 1.7` | [terraform/00-providers.tf](../../terraform/00-providers.tf) |
+| `hashicorp/aws` | `~> 6.0` | [terraform/00-providers.tf](../../terraform/00-providers.tf) |
 
 ### Air-gapped provider mirror
 
@@ -449,17 +449,6 @@ terraform providers mirror ./provider-mirror
 cd terraform/
 terraform init -plugin-dir=../provider-mirror
 ```
-
-### Reference repositories (development only)
-
-Optional clones for local development and debugging — **not production deliverables**. See [README.md](../README.md#reference-repositories):
-
-- `rosa-hcp-dedicated-vpc` — advanced production patterns
-- `terraform-rosa` — MOBB all-in-one ROSA module
-- `terraform-provider-rhcs` — provider source and docs
-- `ocm-sdk-go` + `OCM.json` — OCM API verification
-
----
 
 ## 5. End-to-End Deployment Runbook
 
@@ -499,7 +488,7 @@ flowchart TD
   HelmInstall --> ArgoRepos[ArgoCD initialRepositories wired]
 ```
 
-The Makefile ([Makefile.cluster](../Makefile.cluster)) orchestrates bootstrap:
+The Makefile ([Makefile.cluster](../../Makefile.cluster)) orchestrates bootstrap:
 
 1. Writes `clusters/<name>/cluster-bootstrap-values.yaml` from `gitops_bootstrap_hub_values` or `gitops_bootstrap_spoke_values`
 2. Runs `eval $(terraform output -raw gitops_bootstrap_env_exports)`
@@ -561,7 +550,7 @@ Do not share the provisioning service account credentials with human operators f
 
 ### Composable cluster configuration
 
-Example directories under [clusters/](../clusters/) are **reference `terraform.tfvars` recipes** — not mutually exclusive topology types. A production cluster often combines characteristics from several examples. You create one directory (e.g. `clusters/acme-prod/`) and compose the variables you need.
+Example directories under [clusters/](../../clusters/) are **reference `terraform.tfvars` recipes** — not mutually exclusive topology types. A production cluster often combines characteristics from several examples. You create one directory (e.g. `clusters/acme-prod/`) and compose the variables you need.
 
 ```mermaid
 flowchart TB
@@ -587,13 +576,13 @@ flowchart TB
 
 | Dimension | Key variables | Reference tfvars |
 |-----------|---------------|------------------|
-| Network source | `network_type`, `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids` | [public](../clusters/public/terraform.tfvars), [egress-zero](../clusters/egress-zero/terraform.tfvars), [byo-vpc](../clusters/byo-vpc/terraform.tfvars) |
-| Egress posture | `zero_egress`, `private` | [egress-zero](../clusters/egress-zero/terraform.tfvars) — can combine with BYO VPC |
-| Cluster access | `enable_client_vpn`, `enable_bastion` | [egress-zero](../clusters/egress-zero/terraform.tfvars) |
-| Compute model | `enable_autonode`, `default_*_replicas`, `additional_machine_pools` | [autonode](../clusters/autonode/terraform.tfvars), [public](../clusters/public/terraform.tfvars) |
-| Fleet / ACM | `acm_mode`, hub/spoke bootstrap targets | [dev-hub-1](../clusters/dev-hub-1/terraform.tfvars), [dev-spoke-1](../clusters/dev-spoke-1/terraform.tfvars) |
+| Network source | `network_type`, `existing_vpc_id`, `existing_private_subnet_ids`, `existing_public_subnet_ids` | [public](../../clusters/public/terraform.tfvars), [egress-zero](../../clusters/egress-zero/terraform.tfvars), [byo-vpc](../../clusters/byo-vpc/terraform.tfvars) |
+| Egress posture | `zero_egress`, `private` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) — can combine with BYO VPC |
+| Cluster access | `enable_client_vpn`, `enable_bastion` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) |
+| Compute model | `enable_autonode`, `default_*_replicas`, `additional_machine_pools` | [autonode](../../clusters/autonode/terraform.tfvars), [public](../../clusters/public/terraform.tfvars) |
+| Fleet / ACM | `acm_mode`, hub/spoke bootstrap targets | [dev-hub-1](../../clusters/dev-hub-1/terraform.tfvars), [dev-spoke-1](../../clusters/dev-spoke-1/terraform.tfvars) |
 | GitOps | `enable_gitops_bootstrap`, `gitops_git_repo_url`, `gitops_git_path` | Any example with GitOps enabled |
-| Production hardening | `openshift_version`, KMS, `fips`, `enable_termination_protection` | [egress-zero](../clusters/egress-zero/terraform.tfvars) |
+| Production hardening | `openshift_version`, KMS, `fips`, `enable_termination_protection` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) |
 
 #### Worked example: BYO VPC + egress-zero + AutoNode
 
@@ -628,8 +617,8 @@ enable_gitops_bootstrap = true
 
 | Concern | Action |
 |---------|--------|
-| BYO VPC prerequisites | Pre-provision VPC, subnets, endpoints per [byo-vpc/terraform.tfvars](../clusters/byo-vpc/terraform.tfvars) header comments |
-| Zero egress GitOps | CodeCommit mirroring — [egress-zero-gitops.md](egress-zero-gitops.md) |
+| BYO VPC prerequisites | Pre-provision VPC, subnets, endpoints per [byo-vpc/terraform.tfvars](../../clusters/byo-vpc/terraform.tfvars) header comments |
+| Zero egress GitOps | CodeCommit mirroring — [egress-zero GitOps guide](../guides/egress-zero-gitops.md) |
 | Private API access | `make cluster.<name>.vpn-start` before bootstrap/login |
 | AutoNode | Confirm region/version eligibility; optional `autonode_kubernetes_cluster_tag_id` after first apply |
 | Bootstrap | Standard `make cluster.<name>.bootstrap` unless ACM spoke (then `bootstrap-spoke`) |
@@ -640,12 +629,12 @@ Use these as copy-paste sources — not as exclusive cluster "types":
 
 | Reference directory | Primary variables to borrow |
 |--------------------|----------------------------|
-| [public](../clusters/public/terraform.tfvars) | `network_type = "public"`, dev-sized pools, GitOps block |
-| [egress-zero](../clusters/egress-zero/terraform.tfvars) | `zero_egress`, `private`, Client VPN, production encryption |
-| [byo-vpc](../clusters/byo-vpc/terraform.tfvars) | `network_type = "existing"`, `existing_*` subnet IDs, prerequisite comments |
-| [autonode](../clusters/autonode/terraform.tfvars) | `enable_autonode`, `additional_cluster_properties`, version/region |
-| [dev-hub-1](../clusters/dev-hub-1/terraform.tfvars) | Hub cluster sizing; set `acm_mode = hub` in module |
-| [dev-spoke-1](../clusters/dev-spoke-1/terraform.tfvars) | Spoke GitOps path; use `bootstrap-spoke` Makefile target |
+| [public](../../clusters/public/terraform.tfvars) | `network_type = "public"`, dev-sized pools, GitOps block |
+| [egress-zero](../../clusters/egress-zero/terraform.tfvars) | `zero_egress`, `private`, Client VPN, production encryption |
+| [byo-vpc](../../clusters/byo-vpc/terraform.tfvars) | `network_type = "existing"`, `existing_*` subnet IDs, prerequisite comments |
+| [autonode](../../clusters/autonode/terraform.tfvars) | `enable_autonode`, `additional_cluster_properties`, version/region |
+| [dev-hub-1](../../clusters/dev-hub-1/terraform.tfvars) | Hub cluster sizing; set `acm_mode = hub` in module |
+| [dev-spoke-1](../../clusters/dev-spoke-1/terraform.tfvars) | Spoke GitOps path; use `bootstrap-spoke` Makefile target |
 
 ### Post-bootstrap validation
 
@@ -712,7 +701,7 @@ sequenceDiagram
 
 Hub credentials are stored in AWS Secrets Manager. The spoke bootstrap script reads hub credentials from the secret named in `HUB_CREDENTIALS_SECRET`.
 
-**Known limitation:** `acm_mode` is defined in the cluster module ([01-variables.tf](../modules/infrastructure/cluster/01-variables.tf)) but not yet exposed in root [terraform/10-main.tf](../terraform/10-main.tf). Set it in your fork's module call or extend root variable passthrough. Example cluster directories named `dev-hub-1` / `dev-spoke-1` default to `noacm` unless you configure `acm_mode` explicitly; `bootstrap-spoke` overrides `ACM_MODE=spoke` at runtime via the Makefile.
+**Known limitation:** `acm_mode` is defined in the cluster module ([01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)) but not yet exposed in root [terraform/10-main.tf](../../terraform/10-main.tf). Set it in your fork's module call or extend root variable passthrough. Example cluster directories named `dev-hub-1` / `dev-spoke-1` default to `noacm` unless you configure `acm_mode` explicitly; `bootstrap-spoke` overrides `ACM_MODE=spoke` at runtime via the Makefile.
 
 ---
 
@@ -727,13 +716,13 @@ Complete this checklist before your first production deployment:
 - [ ] Replace `gitops_git_repo_url` with your cluster-config repository URL
 - [ ] Create matching `gitops_git_path` directory in cluster-config (`<env>/<cluster-name>/`)
 - [ ] Fork Helm charts; publish to your Helm repository; update `helm_repo_url`
-- [ ] Replace hardcoded `adGroup: PFAUTHAD` in [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) with your AD/LDAP group
+- [ ] Replace hardcoded `adGroup: PFAUTHAD` in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) with your AD/LDAP group
 - [ ] Pin OpenShift version (`openshift_version` in tfvars)
 - [ ] Configure KMS, etcd encryption, and FIPS for production
 - [ ] Set `tags` for cost allocation and governance
 - [ ] Configure remote state bucket per security policy
 - [ ] Set `enable_persistent_dns_domain` and `enable_termination_protection` per policy
-- [ ] For egress-zero: plan CodeCommit mirroring — [egress-zero-gitops.md](egress-zero-gitops.md) (not fully automated in Terraform yet — see [TODO.md](TODO.md))
+- [ ] For egress-zero: plan CodeCommit mirroring — [egress-zero GitOps guide](../guides/egress-zero-gitops.md) (not fully automated in Terraform yet — tracked in internal `docs/TODO.md`)
 
 ---
 
@@ -757,7 +746,7 @@ flowchart TD
   ApiQ -->|No| PubModule["network_type=public"]
 ```
 
-`zero_egress` and `private` are **separate variables** — they can be set on BYO VPC (`network_type = "existing"`) or Terraform-managed networks. See [terraform/01-variables.tf](../terraform/01-variables.tf).
+`zero_egress` and `private` are **separate variables** — they can be set on BYO VPC (`network_type = "existing"`) or Terraform-managed networks. See [terraform/01-variables.tf](../../terraform/01-variables.tf).
 
 ### Independent dimensions (combine freely)
 
@@ -827,13 +816,13 @@ flowchart TB
   PlatTeam --> Cluster[ROSA HCP cluster]
 ```
 
-See [README.md](../README.md#multi-team-scenarios) for composition patterns using `TF_VAR_*` or shared tfvars.
+See [README.md](../../README.md#multi-team-scenarios) for composition patterns using `TF_VAR_*` or shared tfvars.
 
 ---
 
 ## 9. CI/CD and Operational Model
 
-Scripts under [scripts/cluster/](../scripts/cluster/) are CI-friendly — pipelines do not require Make.
+Scripts under [scripts/cluster/](../../scripts/cluster/) are CI-friendly — pipelines do not require Make.
 
 ### Pipeline stages
 
@@ -865,7 +854,7 @@ flowchart LR
 - **cluster-config changes** (apps, ingress, cert-manager): merge PR → ArgoCD syncs automatically
 - **Terraform changes** (VPC, IAM, cluster version): plan → approve → apply
 
-See [CI_CD.md](CI_CD.md) for GitHub Actions examples and secret configuration.
+See [CI/CD guide](../guides/ci-cd.md) for GitHub Actions examples and secret configuration.
 
 ---
 
@@ -889,13 +878,13 @@ flowchart TD
 
 | Issue | Cause | Workaround |
 |-------|-------|------------|
-| Bootstrap can't reach GitHub | Egress-zero or no VPC endpoints for Git | CodeCommit mirroring — [egress-zero-gitops.md](egress-zero-gitops.md) |
+| Bootstrap can't reach GitHub | Egress-zero or no VPC endpoints for Git | CodeCommit mirroring — [egress-zero GitOps guide](../guides/egress-zero-gitops.md) |
 | CMP plugin apps stuck `Sync: Unknown` (`find: command not found` or plugin sidecar errors) | Repo-server CMP image missing tools or wrong/unreachable image | Use current `gitops-tools` image; re-host to private registry and set `gitops_tools_image` / `defaultImage` in bootstrap templates — [§3c GitOps CMP tools image](#gitops-cmp-tools-container-image) |
-| Repo-server can't pull CMP sidecar image | `ghcr.io` blocked (egress-zero, registry policy) | Mirror `gitops-tools` to ECR; update `defaultImage` in [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) and [spoke-values.yaml.tftpl](../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) |
+| Repo-server can't pull CMP sidecar image | `ghcr.io` blocked (egress-zero, registry policy) | Mirror `gitops-tools` to ECR; update `defaultImage` in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) and [spoke-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) |
 | `gitops_git_target_revision` ignored | Not wired in hub-values template | Use cluster-config default branch or edit template |
 | Helm chart version mismatch | Versions hardcoded in template | Pin versions in your helm fork to match template |
 | ACM examples default to `noacm` | `acm_mode` not in example tfvars | Set module variable; use `bootstrap-spoke` target |
-| Worker nodes not ready | Bootstrap waits for >=2 Ready workers | Wait for nodes or set `MIN_READY_WORKERS` |
+| Worker nodes not ready | Bootstrap waits for ≥2 Ready workers on single-AZ (60 min timeout for `.metal`); long NotReady on bare metal may need `default_auto_repair = false` | Set in `terraform.tfvars`; override `WORKER_READY_MAX_ATTEMPTS` if needed |
 | Cluster login fails (private) | No VPN to private API | Start Client VPN: `make cluster.<name>.vpn-start` |
 
 ### Recommended follow-ups (not yet in Terraform)
@@ -903,8 +892,8 @@ flowchart TD
 These improvements are documented as future work:
 
 - Expose `acm_mode`, `helm_repo_url`, and chart version pins at root `terraform.tfvars`
-- Wire `gitops_git_target_revision` into [hub-values.yaml.tftpl](../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl)
-- Automate CodeCommit repository creation and mirroring — [TODO.md](TODO.md)
+- Wire `gitops_git_target_revision` into [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl)
+- Automate CodeCommit repository creation and mirroring (see internal `docs/TODO.md`)
 
 ---
 
@@ -912,7 +901,7 @@ These improvements are documented as future work:
 
 ### A. GitOps-linking variables
 
-**Root module** ([terraform/01-variables.tf](../terraform/01-variables.tf)) — set in `clusters/<name>/terraform.tfvars`:
+**Root module** ([terraform/01-variables.tf](../../terraform/01-variables.tf)) — set in `clusters/<name>/terraform.tfvars`:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
@@ -921,7 +910,7 @@ These improvements are documented as future work:
 | `gitops_git_path` | Path under repo root | `dev/acme-dev` |
 | `gitops_git_target_revision` | Git branch/tag (limited template support) | `HEAD` |
 
-**Cluster module only** ([modules/infrastructure/cluster/01-variables.tf](../modules/infrastructure/cluster/01-variables.tf)) — set via fork or extend root passthrough:
+**Cluster module only** ([modules/infrastructure/cluster/01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)) — set via fork or extend root passthrough:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -936,7 +925,7 @@ These improvements are documented as future work:
 
 ### B. Terraform bootstrap outputs
 
-From [terraform/90-outputs.tf](../terraform/90-outputs.tf):
+From [terraform/90-outputs.tf](../../terraform/90-outputs.tf):
 
 | Output | Purpose |
 |--------|---------|
@@ -978,10 +967,9 @@ make cluster.<name>.vpn-start           # Start Client VPN (private clusters)
 
 ### E. Related documentation
 
-- [README.md](../README.md) — Project overview and quick start
-- [PLAN.md](../PLAN.md) — Architecture decisions and implementation plan
-- [clusters/README.md](../clusters/README.md) — Cluster directory patterns
-- [scripts/cluster/README-bootstrap-gitops.md](../scripts/cluster/README-bootstrap-gitops.md) — Bootstrap script reference
-- [egress-zero-gitops.md](egress-zero-gitops.md) — GitOps for zero-egress clusters
-- [CI_CD.md](CI_CD.md) — Pipeline integration
-- [comparison-with-reference.md](comparison-with-reference.md) — Pattern comparison
+- [README.md](../../README.md) — Project overview and quick start
+- [PLAN.md](../../PLAN.md) — Architecture decisions and implementation plan
+- [clusters/README.md](../../clusters/README.md) — Cluster directory patterns
+- [scripts/cluster/README-bootstrap-gitops.md](../../scripts/cluster/README-bootstrap-gitops.md) — Bootstrap script reference
+- [egress-zero GitOps guide](../guides/egress-zero-gitops.md) — GitOps for zero-egress clusters
+- [CI/CD guide](../guides/ci-cd.md) — Pipeline integration

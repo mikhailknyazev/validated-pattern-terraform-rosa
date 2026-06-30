@@ -142,6 +142,6 @@ get_tfvar() {
 	if echo "$line" | grep -q '".*"'; then
 		echo "$line" | sed -E 's/.*"([^"]+)".*/\1/'
 	else
-		echo "$line" | sed -E 's/.*=\s*([^"#]+).*/\1/' | sed 's/[[:space:]]*#.*//' | tr -d ' '
+		echo "$line" | sed -E 's/.*=[[:space:]]*([^"#]+).*/\1/' | sed 's/[[:space:]]*#.*//' | tr -d ' '
 	fi
 }

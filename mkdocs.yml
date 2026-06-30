@@ -1,0 +1,106 @@
+site_name: ROSA HCP Terraform
+site_description: Production-grade Terraform for Red Hat OpenShift Service on AWS with Hosted Control Planes
+site_url: https://rh-mobb.github.io/vp-terraform-rosa/
+repo_url: https://github.com/rh-mobb/vp-terraform-rosa
+repo_name: rh-mobb/vp-terraform-rosa
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - include-markdown
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
+
+# Internal / contributor docs — not published on the site.
+exclude_docs: |
+  TODO.md
+  comparison-with-reference.md
+
+validation:
+  nav:
+    omitted_files: ignore
+  links:
+    not_found: ignore
+    unrecognized_links: ignore
+    absolute_links: ignore
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Overview: getting-started/overview.md
+      - Quick Start: getting-started/quick-start.md
+      - Authentication: getting-started/authentication.md
+  - Prerequisites:
+      - Choose Your Path: prerequisites/index.md
+      - Account Prerequisites: prerequisites/account.md
+      - Full-Stack Deployment: prerequisites/full-stack.md
+      - Customer Intake Form: prerequisites/customer-intake.md
+      - Bring Your Own:
+          - Overview: prerequisites/byo/index.md
+          - Network Requirements: prerequisites/byo/network.md
+          - IAM and KMS Handoff: prerequisites/byo/iam-kms.md
+          - Handoff Checklist: prerequisites/byo/handoff-checklist.md
+  - Deployment:
+      - Enablement Guide: deployment/enablement.md
+      - Cluster Configurations: deployment/cluster-configurations.md
+  - Guides:
+      - Egress-Zero GitOps: guides/egress-zero-gitops.md
+      - Zero Egress ECR Access: guides/zero-egress-ecr-access.md
+      - CI/CD: guides/ci-cd.md
+      - Infra Nodes: guides/infra-nodes.md
+      - Ingress Improvements: guides/improvements/ingress.md
+  - Modules:
+      - Cluster: modules/cluster.md
+      - IAM: modules/iam.md
+      - Network (Private): modules/network-private.md
+      - Network (Public): modules/network-public.md
+      - Network (Existing): modules/network-existing.md
+      - Client VPN: modules/client-vpn.md
+      - Bastion: modules/bastion.md
+      - Timing: modules/timing.md
+  - Operations:
+      - Scripts: operations/scripts.md
+      - GitOps Bootstrap: operations/bootstrap-gitops.md
+      - Validation: operations/validation.md
+  - Reference:
+      - Changelog: reference/changelog.md

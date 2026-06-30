@@ -7,6 +7,10 @@ This directory contains bash scripts for managing ROSA HCP clusters. The scripts
 ```
 scripts/
 ├── common.sh              # Shared functions (colors, validation, helpers)
+├── validate/              # Pre-deployment prerequisite validation
+│   ├── account.sh         # Account, tools, ROSA linking, quotas
+│   ├── byo-network.sh     # BYO VPC subnets, tags, endpoints
+│   └── prereqs.sh         # Combined validation from cluster tfvars
 ├── cluster/               # Cluster management scripts
 │   ├── init-infrastructure.sh
 │   ├── plan-infrastructure.sh
@@ -61,7 +65,12 @@ make cluster.my-cluster.plan-infrastructure
 
 # Apply infrastructure
 make cluster.my-cluster.apply-infrastructure
+
+# Validate prerequisites (account + VPC when applicable)
+make cluster.my-cluster.validate
 ```
+
+See [Validation](../docs/operations/validation.md) in the documentation site for flags and BYO VPC checks.
 
 ## Script Details
 
@@ -76,6 +85,17 @@ Shared functions used across all scripts:
 - `check_backend_config()` - Check for remote backend config
 - `check_required_tools()` - Verify required tools are installed
 - `get_tfvar()` - Extract value from terraform.tfvars
+
+### Prerequisite Validation (`validate/`)
+
+- **`account.sh`**: AWS account readiness (tools, credentials, ROSA subscription, quotas)
+- **`byo-network.sh`**: VPC DNS, subnets, ROSA tags, endpoints, routes
+- **`prereqs.sh`**: Runs account + network checks using cluster `terraform.tfvars`
+
+```bash
+make cluster.egress-zero.validate
+make cluster.byo-vpc.validate-network
+```
 
 ### Cluster Management Scripts
 

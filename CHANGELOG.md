@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MkDocs documentation site**: Material-themed site with GitHub Pages deployment (`.github/workflows/docs.yml`), local preview via `make docs-preview`, strict build in PR checks
+- **Layered prerequisites docs** (`docs/prerequisites/`): account, full-stack, BYO network/IAM handoff, customer intake, and validation script documentation
+- **Prerequisite validation scripts** (`scripts/validate/`): `account.sh`, `byo-network.sh`, `prereqs.sh`; Makefile targets `validate-account`, `validate-network`, `validate-prereqs`
+- **BYO VPC egress-zero example** (`clusters/byo-vpc-egress-zero/terraform.tfvars`)
+- **Zero egress ECR access guide** (`docs/guides/zero-egress-ecr-access.md`)
 - **GitOps CMP tools container** (`hack/docker/gitops-tools/`): UBI9-based multi-arch image with `oc`, `helm`, `argocd-vault-plugin`, and `jq` for Argo CD repo-server CMP sidecar. Local build via `hack/docker/gitops-tools/test-image.sh`. CI publishes `ghcr.io/<repo>/gitops-tools:latest` (and `:sha`) on merge to main.
 - **Enablement guide** (`docs/ENABLEMENT.md`): Comprehensive implementation guide for the three-repository ROSA HCP pattern — repository rehoming, Helm chart publishing, end-to-end deployment runbook, ACM hub/spoke, network topology decisions, CI/CD integration, and troubleshooting (18 mermaid diagrams)
 - **Enablement guide — OCM service accounts**: Recommends Hybrid Cloud Console service accounts for cluster provisioning (avoid tying clusters to individual users); documents post-creation notification contacts and User Access configuration

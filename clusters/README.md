@@ -21,6 +21,8 @@ clusters/
 │   └── terraform.tfvars                  # Cluster-specific variables
 ├── byo-vpc/                              # Example BYO VPC cluster (Bring Your Own network)
 │   └── terraform.tfvars                  # Cluster-specific variables
+├── byo-vpc-egress-zero/                  # Example BYO VPC + zero egress
+│   └── terraform.tfvars
 ├── egress-zero2/                         # Additional egress-zero cluster (example)
 └── us-east-1-production/                 # Additional cluster (example)
 ```
@@ -88,12 +90,17 @@ BYO VPC (Bring Your Own) clusters use an existing VPC that you create and manage
 - See [access.redhat.com/articles/7096266](https://access.redhat.com/articles/7096266) for `rosa create network` usage
 
 **Prerequisites (create before Terraform):**
+
+See [BYO Network Requirements](../docs/prerequisites/byo/network.md) for full matrices.
+
 - VPC with DNS support and hostnames enabled
 - Private subnets tagged `kubernetes.io/role/internal-elb = "1"`
-- Public subnets (if applicable) tagged `kubernetes.io/role/elb = "1"`
-- NAT gateway(s) for internet egress (unless zero_egress)
-- VPC endpoints: S3 (gateway), ECR API, ECR DKR, STS, EC2, KMS (minimum)
-- Security group for interface VPC endpoints (inbound from VPC CIDR)
+- Public subnets (if `private = false`) tagged `kubernetes.io/role/elb = "1"`
+- **Standard (`zero_egress = false`):** NAT gateway(s) on private routes; endpoints recommended (S3, STS, ECR API, ECR DKR)
+- **Zero egress (`zero_egress = true`):** no NAT/IGW on private routes; required endpoints S3, STS, ECR API, ECR DKR; EC2/KMS endpoints **not required** for ROSA HCP
+- Security group for interface VPC endpoints (HTTPS 443 from VPC CIDR)
+
+Validate: `make cluster.<name>.validate`
 
 **Usage with `rosa create network`:**
 

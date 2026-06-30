@@ -53,8 +53,8 @@ terraform.rc
 # Editor history files
 .history/
 
-# Reference implementations (embedded git repos)
-reference/
+# Reference implementations (embedded git repos at repo root only)
+/reference/
 
 # Duplicate/obsolete terraform modules directory (only contains cache)
 terraform/modules/
@@ -71,3 +71,7 @@ clusters/*/cluster-bootstrap-values.yaml
 
 kubeconfig
 values.generated.yaml
+
+# MkDocs local build
+.venv-docs/
+site/
