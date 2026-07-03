@@ -26,6 +26,109 @@ Reference: https://github.com/rh-mobb/mobb-rules/blob/main/content/languages/ter
 
 **Best Practice**: `PLAN.md` is the source of truth. Code should reflect the plan, and the plan should reflect reality.
 
+## GitHub Issues Todo Management
+
+This project tracks todo items in **GitHub Issues** (not ad-hoc chat lists or local todo files). Use the `gh` CLI for all issue operations.
+
+### When to Trigger This Workflow
+
+Apply this workflow when a user mentions a **new todo**, **task**, **follow-up**, **backlog item**, or similar work they want tracked — for example:
+
+- "We need to …"
+- "Add a todo to …"
+- "Let's remember to …"
+- "New todo item: …"
+
+Do **not** silently add items to local todo lists or scratch files. GitHub Issues are the source of truth for project todos.
+
+### Step 1: Offer to Create an Issue
+
+**MANDATORY**: When a new todo is mentioned, ask whether the user wants to create a GitHub issue for it. Do not create an issue without explicit confirmation.
+
+Example:
+
+> I can track this as a GitHub issue. Would you like me to create one?
+
+If the user declines, acknowledge and continue without creating an issue.
+
+### Step 2: Search for Existing Issues
+
+Before creating anything, search open (and recently closed) issues for duplicates or related work.
+
+```bash
+# Search by keywords from the todo description
+gh issue list --state all --limit 50 --search "keywords from todo"
+
+# Or list open issues and filter manually
+gh issue list --state open --limit 100
+```
+
+Review titles and bodies for overlap — not just exact title matches. Consider partial scope overlap (e.g., an existing "Add multi-AZ support" issue may cover a new "fix workers pool naming in multi-AZ" todo).
+
+### Step 3: If a Similar Issue Exists — Discuss
+
+**MANDATORY**: Do not create a duplicate issue. Present what you found and discuss options with the user:
+
+- **Use the existing issue** — work will be tracked there; optionally add a comment with new context
+- **Comment on the existing issue** — add details, acceptance criteria, or links without changing scope
+- **Reopen a closed issue** — if the work was prematurely closed or regressed
+- **Create a linked sub-task** — only if the existing issue is an epic and this is clearly distinct scope
+- **Close as duplicate** — if the user confirms the new todo is fully covered
+
+Wait for user direction before taking action (comment, reopen, create, or defer).
+
+### Step 4: If No Similar Issue — Gather Details
+
+Discuss with the user to capture everything needed for a useful issue. At minimum, confirm:
+
+| Field | Purpose |
+|-------|---------|
+| **Title** | Short, actionable summary (imperative mood, e.g., "Add egress-zero NAT gateway monitoring") |
+| **Description** | What, why, and any context from the conversation |
+| **Acceptance criteria** | How we know the work is done |
+| **Labels** | Use repo labels where appropriate (`enhancement`, `bug`, `documentation`, `help wanted`, etc.) |
+| **Priority / urgency** | Optional; note in body if no label exists |
+| **Related links** | PRs, docs, PLAN.md sections, cluster names, error messages |
+| **Assignee** | Optional; ask if someone should own it |
+
+Do not guess missing details — ask clarifying questions. Summarize the draft issue back to the user for approval before creating it.
+
+### Step 5: Create the Issue
+
+After the user approves the draft, create the issue with `gh`:
+
+```bash
+gh issue create \
+  --title "Short actionable title" \
+  --body "$(cat <<'EOF'
+## Summary
+Brief description of the todo.
+
+## Context
+Why this matters and where it came from.
+
+## Acceptance Criteria
+- [ ] Criterion 1
+- [ ] Criterion 2
+
+## Related
+- PLAN.md section (if applicable)
+- Links to PRs, docs, or prior discussion
+EOF
+)" \
+  --label "enhancement"
+```
+
+Return the issue URL to the user after creation.
+
+### Issue Creation Rules
+
+1. **Never create duplicates** — always search first (Step 2)
+2. **Never create without confirmation** — offer first (Step 1), draft second (Step 4), create last (Step 5)
+3. **Use `gh` for all GitHub issue operations** — list, search, create, comment, close, reopen
+4. **Reference issues in commits and PRs** — use `Fixes #123` or `Relates to #123` when work addresses an issue
+5. **Prefer updating existing issues** over creating new ones when scope overlaps
+
 ## Problem Solving and Debugging
 
 ### Validation-First Approach
@@ -629,7 +732,7 @@ terraform {
     }
     rhcs = {
       source  = "terraform-redhat/rhcs"
-      version = "~> 1.7"
+      version = "~> 1.7.7"
     }
   }
 }

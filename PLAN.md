@@ -832,7 +832,7 @@ locals {
 ### Documentation
 - **ROSA HCP Installation**: https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html-single/install_clusters/index
 - **ROSA HCP Getting Started**: https://docs.aws.amazon.com/rosa/latest/userguide/getting-started-hcp.html
-- **RHCS Provider**: https://search.opentofu.org/provider/terraform-redhat/rhcs/v1.7.2
+- **RHCS Provider**: https://search.opentofu.org/provider/terraform-redhat/rhcs/v1.7.7
 
 ### Best Practices
 1. **State Isolation**: Each cluster directory has its own S3 state path

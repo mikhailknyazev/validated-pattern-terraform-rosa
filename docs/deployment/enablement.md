@@ -428,7 +428,7 @@ For zero-egress Git source mirroring (separate from this container image), see [
 
 | Provider | Version constraint | Source |
 |----------|-------------------|--------|
-| `terraform-redhat/rhcs` | `~> 1.7` | [terraform/00-providers.tf](../../terraform/00-providers.tf) |
+| `terraform-redhat/rhcs` | `~> 1.7.7` | [terraform/00-providers.tf](../../terraform/00-providers.tf) |
 | `hashicorp/aws` | `~> 6.0` | [terraform/00-providers.tf](../../terraform/00-providers.tf) |
 
 ### Air-gapped provider mirror
