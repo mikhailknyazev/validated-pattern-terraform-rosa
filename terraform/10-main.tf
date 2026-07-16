@@ -143,6 +143,10 @@ module "iam" {
 
   # KMS configuration
   enable_storage          = true
+  create_kms_keys         = var.create_kms_keys
+  ebs_kms_key_arn         = var.ebs_kms_key_arn
+  efs_kms_key_arn         = var.efs_kms_key_arn
+  etcd_kms_key_arn        = var.etcd_kms_key_arn
   etcd_encryption         = var.etcd_encryption
   kms_key_deletion_window = var.kms_key_deletion_window
   enable_efs              = var.enable_efs != null ? var.enable_efs : true
@@ -211,6 +215,7 @@ module "cluster" {
 
   # KMS keys from IAM module
   kms_key_arn      = module.iam.ebs_kms_key_arn
+  etcd_encryption  = var.etcd_encryption
   etcd_kms_key_arn = module.iam.etcd_kms_key_arn
   efs_kms_key_arn  = module.iam.efs_kms_key_arn
 
@@ -244,8 +249,9 @@ module "cluster" {
   ebs_kms_key_arn    = module.iam.ebs_kms_key_arn # Use IAM module's KMS key
   efs_file_system_id = null                       # Will use cluster module's created EFS
   # GitOps repository configuration
-  git_path                   = var.gitops_git_path
-  gitops_git_repo_url        = var.gitops_git_repo_url
+  git_path            = var.gitops_git_path
+  gitops_git_repo_url = var.gitops_git_repo_url
+  gitops_csv          = var.gitops_csv
   gitops_git_target_revision = var.gitops_git_target_revision
 
   # Termination Protection (IAM resources are in IAM module)

@@ -125,23 +125,46 @@ variable "default_max_replicas" {
   nullable    = true
 }
 
-# Production variables (optional, typically used with egress-zero)
-variable "kms_key_arn" {
-  description = "KMS key ARN for encryption (legacy - KMS keys are now created in IAM module)"
+# KMS Encryption (optional)
+# External KMS keys MUST be tagged with "red-hat" = "true" for the ROSA KMS provider
+# operator to access them. Without this tag, etcd encryption will fail during cluster install.
+variable "create_kms_keys" {
+  description = "Create KMS keys internally in the IAM module. When false (default), no keys are created unless external ARNs are provided. External ARNs always take precedence over internally created keys."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "ebs_kms_key_arn" {
+  description = "KMS key ARN for EBS root volume encryption on worker nodes. When null, no EBS encryption is applied (unless create_kms_keys is true, which creates an internal key)."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "efs_kms_key_arn" {
+  description = "KMS key ARN for EFS file system encryption. When null, no EFS encryption is applied (unless create_kms_keys is true, which creates an internal key)."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "etcd_kms_key_arn" {
+  description = "KMS key ARN for etcd encryption. Requires etcd_encryption = true. When null, no etcd KMS encryption is applied (unless create_kms_keys is true and etcd_encryption is true)."
   type        = string
   default     = null
   nullable    = true
 }
 
 variable "kms_key_deletion_window" {
-  description = "KMS key deletion window in days"
+  description = "KMS key deletion window in days (only used when create_kms_keys is true)"
   type        = number
   default     = 10
   nullable    = false
 }
 
 variable "etcd_encryption" {
-  description = "Enable etcd encryption (requires etcd KMS key from IAM module)"
+  description = "Enable etcd encryption. When true, etcd_kms_key_arn must be provided (or create_kms_keys must be true to create an internal key)."
   type        = bool
   default     = false
   nullable    = false
@@ -591,6 +614,13 @@ variable "gitops_git_path" {
   type        = string
   default     = null
   nullable    = true
+}
+
+variable "gitops_csv" {
+  description = "Cluster Service Version (CSV) for the GitOps operator"
+  type        = string
+  default     = "openshift-gitops-operator.v1.19.2"
+  nullable    = false
 }
 
 variable "enable_cert_manager_iam" {

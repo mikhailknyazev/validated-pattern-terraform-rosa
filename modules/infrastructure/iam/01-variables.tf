@@ -53,8 +53,10 @@ variable "persists_through_sleep_iam" {
 }
 
 # KMS configuration
+# External KMS keys MUST be tagged with "red-hat" = "true" for the ROSA KMS provider
+# operator to access them (ROSAKMSProviderPolicy uses this tag as a condition).
 variable "enable_storage" {
-  description = "Enable storage resources (KMS keys)"
+  description = "Enable storage resources (CSI driver IAM roles)"
   type        = bool
   default     = false
   nullable    = false
@@ -67,15 +69,43 @@ variable "enable_efs" {
   nullable    = false
 }
 
+variable "create_kms_keys" {
+  description = "Create KMS keys internally. When false (default), no keys are created unless external ARNs are provided. External ARNs always take precedence."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "ebs_kms_key_arn" {
+  description = "External KMS key ARN for EBS volume encryption. Takes precedence over internally created key."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "efs_kms_key_arn" {
+  description = "External KMS key ARN for EFS encryption. Takes precedence over internally created key."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "etcd_kms_key_arn" {
+  description = "External KMS key ARN for etcd encryption. Takes precedence over internally created key."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "etcd_encryption" {
-  description = "Enable etcd encryption (requires etcd KMS key)"
+  description = "Enable etcd encryption (requires etcd KMS key via etcd_kms_key_arn or create_kms_keys)"
   type        = bool
   default     = false
   nullable    = false
 }
 
 variable "kms_key_deletion_window" {
-  description = "KMS key deletion window in days"
+  description = "KMS key deletion window in days (only used when create_kms_keys is true)"
   type        = number
   default     = 10
   nullable    = false

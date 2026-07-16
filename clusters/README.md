@@ -186,7 +186,8 @@ Contains cluster-specific variables:
 - `vpc_cidr`: VPC CIDR block
 - `multi_az`: Multi-AZ deployment (true/false)
 - `instance_type`: EC2 instance type for worker nodes
-- Production variables (KMS, version pinning, etc.) - typically used with egress-zero
+- KMS encryption (optional): `ebs_kms_key_arn`, `efs_kms_key_arn`, `etcd_kms_key_arn`, `etcd_encryption` — external KMS keys must be tagged `red-hat = "true"`
+- Production variables (version pinning, etc.) - typically used with egress-zero
 
 ### Backend Configuration
 
