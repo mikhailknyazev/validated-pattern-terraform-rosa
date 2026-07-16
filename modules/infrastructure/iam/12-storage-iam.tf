@@ -9,8 +9,9 @@
 ######################
 
 # IAM policy for KMS access (used by both EBS and EFS CSI drivers)
+# Only created when KMS key ARNs are available (external or internally created)
 resource "aws_iam_policy" "kms_csi" {
-  count = local.persists_through_sleep && var.enable_storage ? 1 : 0
+  count = local.persists_through_sleep && var.enable_storage && local.create_kms_policy ? 1 : 0
 
   name        = "${var.cluster_name}-rosa-kms-csi"
   path        = "/"
@@ -28,10 +29,7 @@ resource "aws_iam_policy" "kms_csi" {
           "kms:GenerateDataKeyWithoutPlainText",
           "kms:DescribeKey"
         ]
-        Resource = concat(
-          length(aws_kms_key.ebs) > 0 ? [aws_kms_key.ebs[0].arn] : [],
-          length(aws_kms_key.efs) > 0 ? [aws_kms_key.efs[0].arn] : []
-        )
+        Resource = local.kms_key_arns_for_policy
       },
       {
         Effect = "Allow"
@@ -40,10 +38,7 @@ resource "aws_iam_policy" "kms_csi" {
           "kms:CreateGrant",
           "kms:ListGrants"
         ]
-        Resource = concat(
-          length(aws_kms_key.ebs) > 0 ? [aws_kms_key.ebs[0].arn] : [],
-          length(aws_kms_key.efs) > 0 ? [aws_kms_key.efs[0].arn] : []
-        )
+        Resource = local.kms_key_arns_for_policy
       },
       {
         Effect = "Allow"
@@ -64,6 +59,23 @@ resource "aws_iam_policy" "kms_csi" {
 }
 
 ######################
+# Attach KMS Policy to Installer Role
+######################
+
+# The ROSA installer role needs kms:DescribeKey to validate KMS keys during cluster creation
+resource "aws_iam_role_policy_attachment" "kms_installer" {
+  count = local.persists_through_sleep && var.enable_storage && local.create_kms_policy ? 1 : 0
+
+  role       = "${var.cluster_name}-HCP-ROSA-Installer-Role"
+  policy_arn = aws_iam_policy.kms_csi[0].arn
+
+  depends_on = [
+    module.account_roles,
+    aws_iam_policy.kms_csi
+  ]
+}
+
+######################
 # Attach KMS Policy to EBS CSI Driver Operator Role
 ######################
 
@@ -71,7 +83,7 @@ resource "aws_iam_policy" "kms_csi" {
 # The role name follows the pattern: {cluster_name}-openshift-cluster-csi-drivers-ebs-cloud-credentials
 # This role is created by the operator-roles module in this IAM module
 resource "aws_iam_role_policy_attachment" "kms_csi_ebs" {
-  count = local.persists_through_sleep && var.enable_storage ? 1 : 0
+  count = local.persists_through_sleep && var.enable_storage && local.create_kms_policy ? 1 : 0
 
   role       = "${var.cluster_name}-openshift-cluster-csi-drivers-ebs-cloud-credentials"
   policy_arn = aws_iam_policy.kms_csi[0].arn
@@ -184,7 +196,7 @@ resource "aws_iam_role_policy_attachment" "efs_csi" {
 
 # Attach KMS policy to EFS CSI role
 resource "aws_iam_role_policy_attachment" "kms_csi_efs" {
-  count = var.enable_storage && var.enable_efs && local.persists_through_sleep ? 1 : 0
+  count = var.enable_storage && var.enable_efs && local.persists_through_sleep && local.create_kms_policy ? 1 : 0
 
   role       = aws_iam_role.efs_csi[0].name
   policy_arn = aws_iam_policy.kms_csi[0].arn

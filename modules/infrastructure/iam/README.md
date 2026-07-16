@@ -33,11 +33,18 @@ module "iam" {
   account_role_prefix  = "my-rosa-cluster-"  # Optional, defaults to cluster_name
   operator_role_prefix = "my-rosa-cluster-"  # Optional, defaults to cluster_name
 
-  # KMS configuration
+  # KMS configuration - Option 1: External KMS key ARNs (recommended)
   enable_storage       = true
+  ebs_kms_key_arn      = "arn:aws:kms:region:account:key/key-id"
+  efs_kms_key_arn      = "arn:aws:kms:region:account:key/key-id"
+  etcd_kms_key_arn     = "arn:aws:kms:region:account:key/key-id"
   etcd_encryption      = true
-  kms_key_deletion_window = 10
   enable_efs           = true
+
+  # KMS configuration - Option 2: Create keys internally
+  # create_kms_keys     = true
+  # etcd_encryption     = true
+  # kms_key_deletion_window = 10
 
   # IAM feature flags
   enable_control_plane_log_forwarding        = true  # New ROSA managed log forwarder
@@ -79,10 +86,14 @@ module "iam" {
 | tags | Tags to apply to all resources | `map(string)` | `{}` | no |
 | persists_through_sleep | Set to false to put cluster in sleep mode (destroys resources). Default true keeps cluster active | `bool` | `true` | no |
 | persists_through_sleep_iam | Override persists_through_sleep for IAM resources. If null, uses persists_through_sleep value | `bool` | `null` | no |
-| enable_storage | Enable storage resources (KMS keys) | `bool` | `false` | no |
+| enable_storage | Enable storage resources (CSI driver IAM roles) | `bool` | `false` | no |
 | enable_efs | Enable EFS file system (required for EFS CSI driver IAM role) | `bool` | `false` | no |
-| etcd_encryption | Enable etcd encryption (requires etcd KMS key) | `bool` | `false` | no |
-| kms_key_deletion_window | KMS key deletion window in days | `number` | `10` | no |
+| create_kms_keys | Create KMS keys internally. When false (default), uses external ARNs or no encryption | `bool` | `false` | no |
+| ebs_kms_key_arn | External KMS key ARN for EBS volume encryption. Takes precedence over internal key | `string` | `null` | no |
+| efs_kms_key_arn | External KMS key ARN for EFS encryption. Takes precedence over internal key | `string` | `null` | no |
+| etcd_kms_key_arn | External KMS key ARN for etcd encryption. Takes precedence over internal key | `string` | `null` | no |
+| etcd_encryption | Enable etcd encryption (requires etcd KMS key via ARN or create_kms_keys) | `bool` | `false` | no |
+| kms_key_deletion_window | KMS key deletion window in days (only used when create_kms_keys is true) | `number` | `10` | no |
 | enable_control_plane_log_forwarding | Enable control plane log forwarding IAM resources (new ROSA managed log forwarder). Replaces legacy audit logging | `bool` | `false` | no |
 | control_plane_log_cloudwatch_enabled | Enable CloudWatch destination for control plane log forwarding. Default disabled for cost; S3 is more cost-effective | `bool` | `false` | no |
 | control_plane_log_cloudwatch_log_group_name | CloudWatch log group name. If null, uses default pattern: ${cluster_name}-control-plane-logs. Must match name used in cluster module | `string` | `null` | no |
@@ -105,12 +116,12 @@ module "iam" {
 | support_role_arn | ARN of the Support account role |
 | worker_role_arn | ARN of the Worker account role |
 | operator_role_arns | Map of operator role names to ARNs |
-| ebs_kms_key_id | ID of the EBS KMS key (null if enable_storage is false) |
-| ebs_kms_key_arn | ARN of the EBS KMS key (null if enable_storage is false) |
-| efs_kms_key_id | ID of the EFS KMS key (null if enable_storage is false) |
-| efs_kms_key_arn | ARN of the EFS KMS key (null if enable_storage is false) |
-| etcd_kms_key_id | ID of the ETCD KMS key (null if enable_storage is false or etcd_encryption is false) |
-| etcd_kms_key_arn | ARN of the ETCD KMS key (null if enable_storage is false or etcd_encryption is false) |
+| ebs_kms_key_id | ID of the EBS KMS key (null when using external ARN or no key configured) |
+| ebs_kms_key_arn | Resolved ARN of the EBS KMS key (external ARN, internal key ARN, or null) |
+| efs_kms_key_id | ID of the EFS KMS key (null when using external ARN or no key configured) |
+| efs_kms_key_arn | Resolved ARN of the EFS KMS key (external ARN, internal key ARN, or null) |
+| etcd_kms_key_id | ID of the ETCD KMS key (null when using external ARN or no key configured) |
+| etcd_kms_key_arn | Resolved ARN of the ETCD KMS key (external ARN, internal key ARN, or null) |
 | control_plane_log_forwarding_role_arn | ARN of the control plane log forwarding IAM role (null if enable_control_plane_log_forwarding is false) |
 | cloudwatch_audit_logging_role_arn | [DEPRECATED] ARN of the CloudWatch audit logging IAM role (null if enable_audit_logging is false). Use control_plane_log_forwarding_role_arn instead |
 | cloudwatch_logging_role_arn | ARN of the CloudWatch logging IAM role (null if enable_cloudwatch_logging is false) |
@@ -153,19 +164,27 @@ This ensures multiple clusters can coexist in the same AWS account without role 
 
 ## KMS Keys
 
-The module creates KMS keys for encryption:
+KMS keys can be provided in two ways:
 
-- **EBS KMS Key**: Used for EBS volume encryption (created when `enable_storage = true`)
-- **EFS KMS Key**: Used for EFS file system encryption (created when `enable_storage = true`, used by cluster module)
-- **ETCD KMS Key**: Used for etcd encryption (created when `enable_storage = true` and `etcd_encryption = true`)
+1. **External ARNs (recommended)**: Pass `ebs_kms_key_arn`, `efs_kms_key_arn`, and/or `etcd_kms_key_arn` via tfvars. External ARNs always take precedence.
+2. **Internal creation**: Set `create_kms_keys = true` to create keys within the module. Internal keys are only created when no external ARN is provided for that key type.
 
-All KMS keys persist through sleep operations (tagged with `persists_through_sleep = "true"`).
+By default (`create_kms_keys = false` and no external ARNs), no KMS encryption is applied.
+
+**Important**: External KMS keys must be tagged with `red-hat = "true"` for the ROSA KMS provider operator to access them. Without this tag, etcd encryption will fail during cluster installation.
+
+- **EBS KMS Key**: Used for EBS root volume encryption on worker nodes
+- **EFS KMS Key**: Used for EFS file system encryption (used by cluster module)
+- **ETCD KMS Key**: Used for etcd data-at-rest encryption (requires `etcd_encryption = true`)
+
+Internally created KMS keys persist through sleep operations (tagged with `persists_through_sleep = "true"`).
 
 ## Storage IAM Resources
 
 The module creates IAM resources for CSI drivers:
 
-- **KMS CSI Policy**: Grants KMS access to EBS and EFS CSI drivers
+- **KMS CSI Policy**: Grants KMS access to EBS and EFS CSI drivers (only created when KMS key ARNs are available)
+- **Installer Role Attachment**: Attaches KMS policy to the ROSA installer role (required for cluster creation with KMS keys)
 - **EBS CSI Attachment**: Attaches KMS policy to EBS CSI driver operator role (created by operator-roles module)
 - **EFS CSI Role**: IAM role for EFS CSI driver with EFS and KMS permissions
 

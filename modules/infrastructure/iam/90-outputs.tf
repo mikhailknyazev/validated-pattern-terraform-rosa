@@ -51,40 +51,40 @@ output "operator_role_arns" {
   sensitive = false
 }
 
-# KMS Key Outputs
+# KMS Key Outputs — returns resolved ARN (external takes precedence over internal)
 output "ebs_kms_key_id" {
-  description = "ID of the EBS KMS key (null if enable_storage is false)"
+  description = "ID of the EBS KMS key (null when using external ARN or no key configured)"
   value       = length(aws_kms_key.ebs) > 0 ? aws_kms_key.ebs[0].key_id : null
   sensitive   = false
 }
 
 output "ebs_kms_key_arn" {
-  description = "ARN of the EBS KMS key (null if enable_storage is false)"
-  value       = length(aws_kms_key.ebs) > 0 ? aws_kms_key.ebs[0].arn : null
+  description = "Resolved ARN of the EBS KMS key (external ARN, internal key ARN, or null)"
+  value       = local.ebs_kms_key_arn_resolved
   sensitive   = false
 }
 
 output "efs_kms_key_id" {
-  description = "ID of the EFS KMS key (null if enable_storage is false)"
+  description = "ID of the EFS KMS key (null when using external ARN or no key configured)"
   value       = length(aws_kms_key.efs) > 0 ? aws_kms_key.efs[0].key_id : null
   sensitive   = false
 }
 
 output "efs_kms_key_arn" {
-  description = "ARN of the EFS KMS key (null if enable_storage is false)"
-  value       = length(aws_kms_key.efs) > 0 ? aws_kms_key.efs[0].arn : null
+  description = "Resolved ARN of the EFS KMS key (external ARN, internal key ARN, or null)"
+  value       = local.efs_kms_key_arn_resolved
   sensitive   = false
 }
 
 output "etcd_kms_key_id" {
-  description = "ID of the ETCD KMS key (null if enable_storage is false or etcd_encryption is false)"
+  description = "ID of the ETCD KMS key (null when using external ARN or no key configured)"
   value       = length(aws_kms_key.etcd) > 0 ? aws_kms_key.etcd[0].key_id : null
   sensitive   = false
 }
 
 output "etcd_kms_key_arn" {
-  description = "ARN of the ETCD KMS key (null if enable_storage is false or etcd_encryption is false)"
-  value       = length(aws_kms_key.etcd) > 0 ? aws_kms_key.etcd[0].arn : null
+  description = "Resolved ARN of the ETCD KMS key (external ARN, internal key ARN, or null)"
+  value       = local.etcd_kms_key_arn_resolved
   sensitive   = false
 }
 
