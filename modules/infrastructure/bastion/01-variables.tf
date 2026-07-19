@@ -62,6 +62,13 @@ variable "tags" {
   nullable    = false
 }
 
+variable "permissions_boundary_arn" {
+  description = "ARN of the permission boundary policy for the bastion IAM role. If null, no boundary is applied."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 # Sleep Protection Variable
 variable "persists_through_sleep" {
   description = "Set to false to put cluster in sleep mode (destroys resources). Default true keeps cluster active. To sleep cluster, set this to false and run terraform apply."

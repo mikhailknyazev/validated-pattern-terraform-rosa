@@ -83,3 +83,10 @@ variable "persists_through_sleep_network" {
   default     = null
   nullable    = true
 }
+
+variable "custom_permissions_boundary_arn" {
+  description = "ARN of the permission boundary policy for the VPC flow log IAM role. If null, no boundary is applied."
+  type        = string
+  default     = null
+  nullable    = true
+}

@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Default machine pool version pinning**: Added `version` and `upgrade_acknowledgements_for` attributes to `rhcs_hcp_machine_pool.default` resource. Previously the default machine pool's OpenShift version was unmanaged by Terraform, preventing explicit version control and minor version upgrade orchestration. The `upgrade_acknowledgements_for` variable is passed from root module through to the cluster module.
+- **Separate default machine pool version variable**: Added `default_machine_pool_version` variable (default null) so the default machine pool version is managed independently from the control plane `openshift_version`. This enables staged upgrades: upgrade the control plane first, wait for completion, then set the worker version.
+- **IAM role name 64-character limit**: Applied `substr(..., 0, 64)` to all custom IAM role names and string-literal role references, matching the upstream RHCS module pattern. Also fixed two string references in `12-storage-iam.tf` that used `var.cluster_name` instead of the correct prefix locals, and corrected the `operator_role_arns` output to use actual upstream naming conventions.
+
+### Changed
+- **Replaced scottwinkler/shell provider with null_resource**: Termination protection now uses `null_resource` with `local-exec` provisioners instead of the third-party `scottwinkler/shell` provider, removing the external provider dependency.
+
 ### Added
+- **Permission boundary support**: Added `rosa_permissions_boundary_arn` and `custom_permissions_boundary_arn` optional variables for applying IAM permission boundaries. `rosa_permissions_boundary_arn` applies to ROSA account and operator roles; `custom_permissions_boundary_arn` applies to all custom IAM roles (EFS CSI, CloudWatch, cert-manager, Secrets Manager, autonode, bastion, VPC flow log). Both default to null (no boundary applied).
 - **MkDocs documentation site**: Material-themed site with GitHub Pages deployment (`.github/workflows/docs.yml`), local preview via `make docs-preview`, strict build in PR checks
 - **Layered prerequisites docs** (`docs/prerequisites/`): account, full-stack, BYO network/IAM handoff, customer intake, and validation script documentation
 - **Prerequisite validation scripts** (`scripts/validate/`): `account.sh`, `byo-network.sh`, `prereqs.sh`; Makefile targets `validate-account`, `validate-network`, `validate-prereqs`

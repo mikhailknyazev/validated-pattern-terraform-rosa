@@ -66,7 +66,7 @@ resource "aws_iam_policy" "kms_csi" {
 resource "aws_iam_role_policy_attachment" "kms_installer" {
   count = local.persists_through_sleep && var.enable_storage && local.create_kms_policy ? 1 : 0
 
-  role       = "${var.cluster_name}-HCP-ROSA-Installer-Role"
+  role       = substr("${local.account_role_prefix_final}-HCP-ROSA-Installer-Role", 0, 64)
   policy_arn = aws_iam_policy.kms_csi[0].arn
 
   depends_on = [
@@ -85,7 +85,7 @@ resource "aws_iam_role_policy_attachment" "kms_installer" {
 resource "aws_iam_role_policy_attachment" "kms_csi_ebs" {
   count = local.persists_through_sleep && var.enable_storage && local.create_kms_policy ? 1 : 0
 
-  role       = "${var.cluster_name}-openshift-cluster-csi-drivers-ebs-cloud-credentials"
+  role       = substr("${local.operator_role_prefix_final}-openshift-cluster-csi-drivers-ebs-cloud-credentials", 0, 64)
   policy_arn = aws_iam_policy.kms_csi[0].arn
 
   depends_on = [
@@ -155,7 +155,8 @@ resource "aws_iam_policy" "efs_csi" {
 resource "aws_iam_role" "efs_csi" {
   count = var.enable_storage && var.enable_efs && local.persists_through_sleep ? 1 : 0
 
-  name = "${var.cluster_name}-rosa-efs-csi-role-iam"
+  name                 = substr("${var.cluster_name}-rosa-efs-csi-role-iam", 0, 64)
+  permissions_boundary = var.custom_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

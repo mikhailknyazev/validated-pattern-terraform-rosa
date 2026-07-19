@@ -23,10 +23,6 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
-    shell = {
-      source  = "scottwinkler/shell"
-      version = ">= 1.7.10"
-    }
     time = {
       source  = "hashicorp/time"
       version = ">= 0.9.0"
@@ -65,11 +61,3 @@ provider "rhcs" {
   # Provider reads from env: RHCS_TOKEN, RHCS_CLIENT_ID, RHCS_CLIENT_SECRET
 }
 
-# Shell provider for bootstrap scripts
-# This provider must be configured at the root level, not in modules,
-# to avoid making modules "legacy modules" that cannot use depends_on
-provider "shell" {
-  interpreter           = ["/bin/sh", "-c"]
-  enable_parallelism    = false
-  sensitive_environment = {}
-}

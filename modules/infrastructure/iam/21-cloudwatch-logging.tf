@@ -51,7 +51,8 @@ resource "aws_iam_policy" "cloudwatch_logging" {
 resource "aws_iam_role" "cloudwatch_logging" {
   count = local.persists_through_sleep && var.enable_cloudwatch_logging ? 1 : 0
 
-  name = "${var.cluster_name}-rosa-cloudwatch-role-iam"
+  name                 = substr("${var.cluster_name}-rosa-cloudwatch-role-iam", 0, 64)
+  permissions_boundary = var.custom_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

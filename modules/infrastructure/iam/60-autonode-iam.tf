@@ -389,7 +389,7 @@ data "aws_iam_policy_document" "autonode_controller" {
 resource "aws_iam_policy" "autonode" {
   count = local.persists_through_sleep && var.enable_autonode ? 1 : 0
 
-  name        = "${local.account_role_prefix_final}-autonode-policy"
+  name        = substr("${local.account_role_prefix_final}-autonode-policy", 0, 128)
   description = "Karpenter / AutoNode controller permissions for cluster ${var.cluster_name}"
   policy      = data.aws_iam_policy_document.autonode_controller[0].json
 
@@ -402,7 +402,8 @@ resource "aws_iam_policy" "autonode" {
 resource "aws_iam_role" "autonode_operator" {
   count = local.persists_through_sleep && var.enable_autonode ? 1 : 0
 
-  name = "${local.account_role_prefix_final}-autonode-operator-role"
+  name                 = substr("${local.account_role_prefix_final}-autonode-operator-role", 0, 64)
+  permissions_boundary = var.custom_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

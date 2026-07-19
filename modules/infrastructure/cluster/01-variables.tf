@@ -233,6 +233,20 @@ variable "openshift_version" {
   nullable    = true
 }
 
+variable "upgrade_acknowledgements_for" {
+  description = "Acknowledgement for minor version upgrade (e.g., '4.22'). Required when upgrading between minor versions."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "default_machine_pool_version" {
+  description = "OpenShift version for the default machine pool. If null, Terraform does not manage the worker node version. Use this to stage upgrades: first upgrade openshift_version (control plane), wait for completion, then set this to the new version."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "tags" {
   description = "Tags to apply to the cluster"
   type        = map(string)

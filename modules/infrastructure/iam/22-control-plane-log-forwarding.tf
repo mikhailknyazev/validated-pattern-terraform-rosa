@@ -14,7 +14,8 @@
 resource "aws_iam_role" "control_plane_log_forwarding" {
   count = var.enable_control_plane_log_forwarding ? 1 : 0
 
-  name = "${var.cluster_name}-CustomerLogDistribution-RH"
+  name                 = substr("${var.cluster_name}-CustomerLogDistribution-RH", 0, 64)
+  permissions_boundary = var.custom_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

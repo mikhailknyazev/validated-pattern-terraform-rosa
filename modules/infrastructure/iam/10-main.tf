@@ -27,14 +27,11 @@ locals {
     node_pool      = "node-pool"
   }
 
-  # Construct role ARNs based on the naming pattern used by the modules
-  # Reference: https://github.com/rh-mobb/terraform-rosa/blob/main/03-roles.tf
-  role_prefix = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.account_role_prefix_final}"
-
   # HCP account roles use different naming: {prefix}-HCP-ROSA-{RoleName}-Role
-  installer_role_arn = "${local.role_prefix}-HCP-ROSA-Installer-Role"
-  support_role_arn   = "${local.role_prefix}-HCP-ROSA-Support-Role"
-  worker_role_arn    = "${local.role_prefix}-HCP-ROSA-Worker-Role"
+  # Apply substr to match upstream module's 64-char truncation
+  installer_role_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.account_role_prefix_final}-HCP-ROSA-Installer-Role", 0, 64)}"
+  support_role_arn   = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.account_role_prefix_final}-HCP-ROSA-Support-Role", 0, 64)}"
+  worker_role_arn    = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.account_role_prefix_final}-HCP-ROSA-Worker-Role", 0, 64)}"
 
   # Strip https:// prefix from OIDC endpoint URL if present (as per Red Hat documentation)
   # The OIDC endpoint URL should be in format: oidc.op1.openshiftapps.com/2nb1con7holccea7ogkfrm7ddjc8ih0q
@@ -55,8 +52,9 @@ module "account_roles" {
   source  = "terraform-redhat/rosa-hcp/rhcs//modules/account-iam-resources"
   version = "~> 1.7"
 
-  account_role_prefix = local.account_role_prefix_final
-  tags                = local.common_tags
+  account_role_prefix  = local.account_role_prefix_final
+  permissions_boundary = var.rosa_permissions_boundary_arn
+  tags                 = local.common_tags
 }
 
 # OIDC Configuration and Provider using terraform-redhat/rosa-hcp/rhcs module
@@ -82,6 +80,7 @@ module "operator_roles" {
 
   oidc_endpoint_url    = module.oidc_config_and_provider.oidc_endpoint_url
   operator_role_prefix = local.operator_role_prefix_final
+  permissions_boundary = var.rosa_permissions_boundary_arn
   tags                 = local.common_tags
 }
 
@@ -92,7 +91,7 @@ module "operator_roles" {
 resource "aws_iam_role_policy_attachment" "worker_ecr_readonly" {
   count = var.zero_egress && local.persists_through_sleep ? 1 : 0
 
-  role       = "${local.account_role_prefix_final}-HCP-ROSA-Worker-Role"
+  role       = substr("${local.account_role_prefix_final}-HCP-ROSA-Worker-Role", 0, 64)
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 
   # Ensure the account_roles module has created the worker role before attaching the policy
