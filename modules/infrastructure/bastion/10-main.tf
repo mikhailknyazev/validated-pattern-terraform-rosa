@@ -44,8 +44,9 @@ locals {
 resource "aws_iam_role" "bastion" {
   count = var.persists_through_sleep ? 1 : 0
 
-  name        = "${var.name_prefix}-bastion-iam-role"
-  description = "IAM role for bastion host with SSM Session Manager access"
+  name                 = substr("${var.name_prefix}-bastion-iam-role", 0, 64)
+  description          = "IAM role for bastion host with SSM Session Manager access"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

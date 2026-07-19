@@ -33,6 +33,8 @@ module "network_private" {
   zero_egress        = var.zero_egress
   flow_log_s3_bucket = var.flow_log_s3_bucket
 
+  custom_permissions_boundary_arn = var.custom_permissions_boundary_arn
+
   tags                           = local.tags
   persists_through_sleep         = var.persists_through_sleep
   persists_through_sleep_network = var.persists_through_sleep_network
@@ -162,6 +164,10 @@ module "iam" {
   enable_autonode                    = var.enable_autonode
   autonode_kubernetes_cluster_tag_id = var.autonode_kubernetes_cluster_tag_id
 
+  # Permission boundaries
+  rosa_permissions_boundary_arn   = var.rosa_permissions_boundary_arn
+  custom_permissions_boundary_arn = var.custom_permissions_boundary_arn
+
   # Control plane log forwarding (new ROSA managed log forwarder)
   enable_control_plane_log_forwarding         = var.enable_control_plane_log_forwarding
   control_plane_log_cloudwatch_enabled        = var.control_plane_log_cloudwatch_enabled
@@ -249,21 +255,23 @@ module "cluster" {
   ebs_kms_key_arn    = module.iam.ebs_kms_key_arn # Use IAM module's KMS key
   efs_file_system_id = null                       # Will use cluster module's created EFS
   # GitOps repository configuration
-  git_path            = var.gitops_git_path
-  gitops_git_repo_url = var.gitops_git_repo_url
-  gitops_csv          = var.gitops_csv
+  git_path                   = var.gitops_git_path
+  gitops_git_repo_url        = var.gitops_git_repo_url
+  gitops_csv                 = var.gitops_csv
   gitops_git_target_revision = var.gitops_git_target_revision
 
   # Termination Protection (IAM resources are in IAM module)
   enable_termination_protection = var.enable_termination_protection
 
   # GitOps bootstrap configuration - IAM role ARNs from IAM module
-  aws_private_ca_arn    = var.aws_private_ca_arn
-  cert_manager_role_arn = module.iam.cert_manager_role_arn
-  openshift_version     = var.openshift_version
-  service_cidr          = var.service_cidr
-  pod_cidr              = var.pod_cidr
-  host_prefix           = var.host_prefix
+  aws_private_ca_arn           = var.aws_private_ca_arn
+  cert_manager_role_arn        = module.iam.cert_manager_role_arn
+  openshift_version            = var.openshift_version
+  upgrade_acknowledgements_for = var.upgrade_acknowledgements_for
+  default_machine_pool_version = var.default_machine_pool_version
+  service_cidr                 = var.service_cidr
+  pod_cidr                     = var.pod_cidr
+  host_prefix                  = var.host_prefix
 
   # Default machine pool configuration
   # If not set, module will calculate defaults:
@@ -420,15 +428,16 @@ module "bastion" {
   count  = var.enable_bastion && var.persists_through_sleep && length(local.network.private_subnet_ids) > 0 ? 1 : 0
   source = "../modules/infrastructure/bastion"
 
-  name_prefix            = var.cluster_name
-  vpc_id                 = local.network.vpc_id
-  subnet_id              = local.network.private_subnet_ids[0] # Use first private subnet
-  private_subnet_ids     = local.network.private_subnet_ids    # All private subnets for VPC endpoints
-  region                 = var.region
-  vpc_cidr               = var.vpc_cidr
-  bastion_public_ip      = var.bastion_public_ip # Should be false for egress-zero
-  bastion_public_ssh_key = var.bastion_public_ssh_key
-  persists_through_sleep = var.persists_through_sleep
+  name_prefix              = var.cluster_name
+  vpc_id                   = local.network.vpc_id
+  subnet_id                = local.network.private_subnet_ids[0] # Use first private subnet
+  private_subnet_ids       = local.network.private_subnet_ids    # All private subnets for VPC endpoints
+  region                   = var.region
+  vpc_cidr                 = var.vpc_cidr
+  bastion_public_ip        = var.bastion_public_ip # Should be false for egress-zero
+  bastion_public_ssh_key   = var.bastion_public_ssh_key
+  persists_through_sleep   = var.persists_through_sleep
+  permissions_boundary_arn = var.custom_permissions_boundary_arn
 
   tags = var.tags
 

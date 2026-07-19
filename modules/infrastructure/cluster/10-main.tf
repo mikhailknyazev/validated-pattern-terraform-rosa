@@ -370,6 +370,9 @@ resource "rhcs_hcp_machine_pool" "default" {
     tags = local.common_tags
   }
 
+  version                      = var.default_machine_pool_version
+  upgrade_acknowledgements_for = var.upgrade_acknowledgements_for
+
   # Only set labels/taints if they have values (provider requires at least 1 element if provided)
   labels = length(var.default_labels) > 0 ? var.default_labels : null
   taints = length(var.default_taints) > 0 ? var.default_taints : null

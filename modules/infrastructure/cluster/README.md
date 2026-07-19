@@ -146,7 +146,9 @@ module "cluster" {
 | pod_cidr | CIDR block for pods | `string` | `"10.128.0.0/14"` |
 | host_prefix | Host prefix for subnet allocation | `number` | `23` |
 | channel_group | Channel group for OpenShift version | `string` | `"stable"` |
-| openshift_version | OpenShift version to pin. If not provided, automatically uses latest installable version | `string` | `null` |
+| openshift_version | OpenShift version to pin for the control plane. If not provided, automatically uses latest installable version | `string` | `null` |
+| upgrade_acknowledgements_for | Acknowledgement for minor version upgrade (e.g., '4.22'). Required when upgrading between minor versions | `string` | `null` |
+| default_machine_pool_version | OpenShift version for the default machine pool. If null, Terraform does not manage the worker node version. Set separately from openshift_version to stage upgrades (control plane first, then workers) | `string` | `null` |
 | wait_for_std_compute_nodes_complete | Wait for standard compute nodes to complete before considering cluster creation successful. Set to false if nodes may take longer (e.g., egress-zero clusters) | `bool` | `true` |
 | enable_control_plane_log_forwarding | Enable control plane log forwarding using ROSA's managed log forwarder. Supports forwarding multiple log groups to CloudWatch and/or S3. Replaces legacy audit logging | `bool` | `false` |
 | enable_audit_logging | [DEPRECATED] Enable CloudWatch audit log forwarding (legacy implementation). Use enable_control_plane_log_forwarding instead | `bool` | `true` |

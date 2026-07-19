@@ -74,6 +74,21 @@ module "network" {
 }
 ```
 
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| name_prefix | Prefix for all resource names (typically cluster name) | `string` | n/a | yes |
+| vpc_cidr | CIDR block for the VPC | `string` | n/a | yes |
+| multi_az | Enable multi-AZ deployment (uses first 3 available AZs) | `bool` | `false` | no |
+| enable_nat_gateway | Enable Regional NAT Gateway for internet egress | `bool` | `true` | no |
+| zero_egress | Enable zero egress mode with strict security groups | `bool` | `false` | no |
+| flow_log_s3_bucket | S3 bucket name for VPC flow logs. If null, flow logs are disabled | `string` | `null` | no |
+| custom_permissions_boundary_arn | ARN of the permission boundary policy for the VPC flow log IAM role. If null, no boundary is applied | `string` | `null` | no |
+| tags | Tags to apply to all resources | `map(string)` | `{}` | no |
+| persists_through_sleep | Set to false to put cluster in sleep mode (destroys resources) | `bool` | `true` | no |
+| persists_through_sleep_network | Override persists_through_sleep for network resources | `bool` | `null` | no |
+
 ## Outputs
 
 | Name | Description |

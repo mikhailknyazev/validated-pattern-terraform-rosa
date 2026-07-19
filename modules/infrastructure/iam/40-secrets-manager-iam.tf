@@ -89,7 +89,8 @@ resource "aws_iam_policy" "secrets_manager" {
 resource "aws_iam_role" "secrets_manager" {
   count = local.persists_through_sleep && var.enable_secrets_manager_iam ? 1 : 0
 
-  name = "${var.cluster_name}-rosa-secretsmanager-role-iam"
+  name                 = substr("${var.cluster_name}-rosa-secretsmanager-role-iam", 0, 64)
+  permissions_boundary = var.custom_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

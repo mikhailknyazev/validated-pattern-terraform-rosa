@@ -38,15 +38,13 @@ output "worker_role_arn" {
 output "operator_role_arns" {
   description = "Map of operator role names to ARNs. Operator roles are created by the operator-roles module and referenced by prefix in the cluster. (null if persists_through_sleep_iam is false)"
   value = length(module.operator_roles) > 0 ? {
-    # Operator roles are created by the operator-roles module
-    # The cluster references them by operator_role_prefix
-    # These ARNs follow the pattern: {operator_role_prefix}{operator_name}-Role
-    ingress        = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.operator_role_prefix_final}ingress-Role"
-    control_plane  = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.operator_role_prefix_final}control-plane-Role"
-    csi_driver     = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.operator_role_prefix_final}csi-driver-Role"
-    image_registry = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.operator_role_prefix_final}image-registry-Role"
-    network        = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.operator_role_prefix_final}network-Role"
-    node_pool      = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.operator_role_prefix_final}node-pool-Role"
+    # Operator roles are created by the operator-roles module using substr({prefix}-{namespace}-{operator_name}, 0, 64)
+    ingress        = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.operator_role_prefix_final}-openshift-ingress-operator-cloud-credentials", 0, 64)}"
+    control_plane  = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.operator_role_prefix_final}-kube-system-control-plane-operator", 0, 64)}"
+    csi_driver     = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.operator_role_prefix_final}-openshift-cluster-csi-drivers-ebs-cloud-credentials", 0, 64)}"
+    image_registry = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.operator_role_prefix_final}-openshift-image-registry-installer-cloud-credentials", 0, 64)}"
+    network        = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.operator_role_prefix_final}-openshift-cloud-network-config-controller-cloud-credentials", 0, 64)}"
+    node_pool      = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${substr("${local.operator_role_prefix_final}-kube-system-capa-controller-manager", 0, 64)}"
   } : null
   sensitive = false
 }

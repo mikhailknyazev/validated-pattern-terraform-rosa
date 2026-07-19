@@ -104,6 +104,8 @@ module "iam" {
 | aws_private_ca_arn | AWS Private CA ARN for cert-manager (optional) | `string` | `null` | no |
 | additional_secrets | Additional Secrets Manager secret names for IAM policy (optional) | `list(string)` | `null` | no |
 | cluster_credentials_secret_arn | ARN of cluster credentials secret (for Secrets Manager IAM policy) | `string` | `null` | no |
+| rosa_permissions_boundary_arn | ARN of the permission boundary policy for ROSA managed IAM roles (account + operator roles). If null, no boundary is applied | `string` | `null` | no |
+| custom_permissions_boundary_arn | ARN of the permission boundary policy for custom IAM roles (EFS CSI, CloudWatch, Secrets Manager, cert-manager, etc.). If null, no boundary is applied | `string` | `null` | no |
 
 ## Outputs
 

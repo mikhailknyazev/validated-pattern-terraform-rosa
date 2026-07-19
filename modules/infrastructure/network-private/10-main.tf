@@ -338,7 +338,8 @@ resource "aws_flow_log" "vpc" {
 resource "aws_iam_role" "vpc_flow_log" {
   count = local.persists_through_sleep && var.flow_log_s3_bucket != null ? 1 : 0
 
-  name = "${var.name_prefix}-vpc-flow-log-role"
+  name                 = substr("${var.name_prefix}-vpc-flow-log-role", 0, 64)
+  permissions_boundary = var.custom_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

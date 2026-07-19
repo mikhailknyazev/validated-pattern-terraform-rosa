@@ -191,3 +191,21 @@ variable "control_plane_log_cloudwatch_log_group_name" {
   default     = null
   nullable    = true
 }
+
+#------------------------------------------------------------------------------
+# Permission Boundaries
+#------------------------------------------------------------------------------
+
+variable "rosa_permissions_boundary_arn" {
+  description = "ARN of the permission boundary policy for ROSA managed IAM roles (account + operator roles). If null, no boundary is applied."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "custom_permissions_boundary_arn" {
+  description = "ARN of the permission boundary policy for custom IAM roles (EFS CSI, CloudWatch, Secrets Manager, cert-manager, etc.). If null, no boundary is applied."
+  type        = string
+  default     = null
+  nullable    = true
+}

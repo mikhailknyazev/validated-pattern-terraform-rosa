@@ -84,6 +84,7 @@ module "bastion" {
 | bastion_public_ssh_key | Path to SSH public key file | `string` | `"~/.ssh/id_rsa.pub"` | no |
 | instance_type | EC2 instance type for the bastion host | `string` | `"t3.micro"` | no |
 | tags | Tags to apply to all resources | `map(string)` | `{}` | no |
+| permissions_boundary_arn | ARN of the permission boundary policy for the bastion IAM role. If null, no boundary is applied | `string` | `null` | no |
 
 ## Outputs
 

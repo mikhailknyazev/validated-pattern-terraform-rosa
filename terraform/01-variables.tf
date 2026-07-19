@@ -308,6 +308,20 @@ variable "openshift_version" {
   nullable    = true
 }
 
+variable "upgrade_acknowledgements_for" {
+  description = "Acknowledgement for minor version upgrade (e.g., '4.22'). Required when upgrading between minor versions."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "default_machine_pool_version" {
+  description = "OpenShift version for the default machine pool. If null, Terraform does not manage the worker node version. Use this to stage upgrades: first upgrade openshift_version (control plane), wait for completion, then set this to the new version."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "service_cidr" {
   description = "CIDR block for services"
   type        = string
@@ -674,4 +688,22 @@ variable "additional_cluster_properties" {
   type        = map(string)
   default     = {}
   nullable    = false
+}
+
+#------------------------------------------------------------------------------
+# Permission Boundaries
+#------------------------------------------------------------------------------
+
+variable "rosa_permissions_boundary_arn" {
+  description = "ARN of the permission boundary policy for ROSA managed IAM roles (account + operator roles). If null, no boundary is applied."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "custom_permissions_boundary_arn" {
+  description = "ARN of the permission boundary policy for custom IAM roles (EFS CSI, CloudWatch, Secrets Manager, cert-manager, bastion, etc.). If null, no boundary is applied."
+  type        = string
+  default     = null
+  nullable    = true
 }
