@@ -444,6 +444,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated provider configuration to match rh-mobb reference implementation
 
 ### Fixed
+- **Duplicate admin password secrets (#28)**: Removed root `aws_secretsmanager_secret.admin_password` (`rosa-hcp-{cluster}-admin-password`). Admin credentials now use only the cluster module secret `{cluster_name}-credentials` (JSON: user/password/url). `get-admin-password.sh` reads that secret (with legacy ARN/plain-string fallback). Root outputs: `cluster_credentials_secret_arn` / `cluster_credentials_secret_name`; `admin_password_secret_arn` is a deprecated alias. Follow-up for IDP-only/dynamic passwords: #29.
 - **GitOps CMP tools image missing `find`**: UBI9 minimal lacked `findutils`, causing CMP plugin discover to fail (`find: command not found`) and plugin apps (e.g. `cluster-config-autonode`) to stay `Sync: Unknown`. Added `findutils` and `git` (for `helm dependency update` on git-based chart deps); also bundle `kubectl` from the OC client tarball.
 - **ROSA default SG race on first apply**: EFS and AutoNode resources failed when `{cluster_id}-default-sg` was not yet tagged in AWS after `rhcs_cluster_rosa_hcp` became ready. Added `time_sleep` delay and shared `data.aws_security_groups.cluster_default` lookup (no local-exec).
 

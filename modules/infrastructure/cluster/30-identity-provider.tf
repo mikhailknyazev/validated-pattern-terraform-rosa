@@ -35,16 +35,17 @@ resource "rhcs_group_membership" "admin" {
   depends_on = [rhcs_identity_provider.admin]
 }
 
-# Cluster credentials secret
-# This secret stores cluster credentials in the format expected by scripts (e.g., GitOps bootstrap):
+# Cluster credentials secret — single source of truth for admin credentials (Fixes #28).
+# Format expected by login/info scripts and GitOps bootstrap:
 # {
-#   "user": "cluster-admin",
+#   "user": "admin",
 #   "password": "...",
 #   "url": "https://api.cluster.example.com:6443"
 # }
-# This secret persists through sleep operations to preserve credentials for cluster restart.
+# Persists through sleep operations to preserve credentials for cluster restart.
+# Do not create a separate plain-password Secrets Manager secret at the root module.
 resource "aws_secretsmanager_secret" "cluster_credentials" {
-  # Always create secret (unconditional) - admin user always exists when identity provider is enabled
+  # Always create secret (unconditional) so name/ARN remain stable across sleep/wake
   # Secret persists even when persists_through_sleep=false (sleep operation)
   count = 1
 

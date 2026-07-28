@@ -339,8 +339,10 @@ module "cluster_timing" {
 }
 
 # Admin Password Management
-# Generate random password if override is not provided
-# Store password in AWS Secrets Manager for secure access
+# Generate random password if override is not provided, then pass it to the cluster module.
+# Single source of truth in AWS Secrets Manager is the cluster credentials secret
+# ({cluster_name}-credentials) created in modules/infrastructure/cluster/30-identity-provider.tf.
+# Fixes #28: previously a duplicate rosa-hcp-{cluster}-admin-password secret was also created here.
 resource "random_password" "admin_password" {
   count = var.admin_password_override == null ? 1 : 0
 
@@ -357,51 +359,7 @@ resource "random_password" "admin_password" {
   # - Contains symbol or number (special = true, numeric = true)
 }
 
-# AWS Secrets Manager secret for admin password
-# Stores either the override password or the generated random password
-#
-# Admin Password Secret (stored in AWS Secrets Manager)
-# This secret persists through sleep operations to preserve credentials for cluster restart.
-# Recovery window is set to 0 to disable the 7-30 day recovery period.
-# This allows immediate deletion and recreation of secrets with the same name if needed.
-resource "aws_secretsmanager_secret" "admin_password" {
-  # Always create secret (persists through sleep for easy cluster restart)
-  # Secret persists even when persists_through_sleep=false (sleep operation)
-  count = 1
-
-  name        = "rosa-hcp-${var.cluster_name}-admin-password"
-  description = "Admin password for ROSA HCP cluster ${var.cluster_name} (persists through sleep)"
-
-  # Set recovery window to 0 to disable the recovery period (default is 30 days)
-  # This allows immediate deletion and recreation of secrets with the same name
-  recovery_window_in_days = 0
-
-  tags = merge(local.tags, {
-    Name                   = "rosa-hcp-${var.cluster_name}-admin-password"
-    Cluster                = var.cluster_name
-    ManagedBy              = "Terraform"
-    Purpose                = "ClusterAdminPassword"
-    persists_through_sleep = "true"
-  })
-}
-
-# Store the password in the secret
-# Only create/update secret version when cluster exists (not during sleep)
-resource "aws_secretsmanager_secret_version" "admin_password" {
-  count = var.persists_through_sleep ? 1 : 0
-
-  secret_id     = aws_secretsmanager_secret.admin_password[0].id
-  secret_string = var.admin_password_override != null ? var.admin_password_override : random_password.admin_password[0].result
-
-  # Allow secret to be updated manually if password changes
-  lifecycle {
-    ignore_changes = [
-      secret_string
-    ]
-  }
-}
-
-# Identity provider is now created in the cluster module
+# Identity provider and cluster credentials secret are created in the cluster module
 # See modules/infrastructure/cluster/30-identity-provider.tf
 
 # Bastion Host (optional, for development/demo use only)

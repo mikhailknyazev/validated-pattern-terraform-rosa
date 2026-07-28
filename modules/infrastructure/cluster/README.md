@@ -166,7 +166,7 @@ module "cluster" {
 
 ### Identity Provider
 
-The module creates an HTPasswd identity provider and admin user when `enable_identity_provider = true`. The admin password is stored in AWS Secrets Manager and persists through sleep operations.
+The module creates an HTPasswd identity provider and admin user when `enable_identity_provider = true`. Admin credentials are stored once in AWS Secrets Manager as `{cluster_name}-credentials` (JSON: `user`, `password`, `url`) and persist through sleep. This is the single source of truth for login and GitOps bootstrap (no separate plain-password secret).
 
 ## Outputs
 
@@ -176,15 +176,13 @@ The module creates an HTPasswd identity provider and admin user when `enable_ide
 | cluster_name | Name of the ROSA HCP cluster |
 | api_url | API URL of the cluster |
 | console_url | Console URL of the cluster |
-| kubeconfig | Kubernetes configuration file (sensitive) |
-| cluster_admin_password | Cluster admin password (sensitive) |
 | state | State of the cluster |
 | identity_provider_id | ID of the HTPasswd identity provider (null if enable_identity_provider is false) |
 | identity_provider_name | Name of the identity provider (null if enable_identity_provider is false) |
 | admin_username | Username of the admin user |
 | admin_group | Group the admin user belongs to |
-| cluster_credentials_secret_name | Name of AWS Secrets Manager secret containing cluster credentials |
-| cluster_credentials_secret_arn | ARN of AWS Secrets Manager secret containing cluster credentials |
+| cluster_credentials_secret_name | Name of AWS Secrets Manager secret containing cluster credentials JSON |
+| cluster_credentials_secret_arn | ARN of AWS Secrets Manager secret containing cluster credentials JSON |
 | efs_file_system_id | ID of the EFS file system (null if enable_efs is false) |
 | efs_file_system_arn | ARN of the EFS file system (null if enable_efs is false) |
 | aws_account_id | AWS account ID where the cluster is deployed |
