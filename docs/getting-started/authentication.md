@@ -61,11 +61,21 @@ See [Account Prerequisites](../prerequisites/account.md) for OCM role and Market
 
 ## Admin password
 
-Optional cluster admin password for Terraform-managed IDP:
+Optional override for the Terraform-managed HTPasswd admin user. If unset, a random password is generated and stored in AWS Secrets Manager as `{cluster_name}-credentials` (JSON with `user`, `password`, `url`):
 
 ```bash
-export TF_VAR_admin_password="your-secure-password-at-least-14-chars"
+export TF_VAR_admin_password_override="your-secure-password-at-least-14-chars"
 ```
+
+Retrieve the password after apply:
+
+```bash
+aws secretsmanager get-secret-value \
+  --secret-id "$(cd terraform && terraform output -raw cluster_credentials_secret_arn)" \
+  --query SecretString --output text | jq -r .password
+```
+
+Or use `make cluster.<name>.show-credentials` / `scripts/utils/get-admin-password.sh`.
 
 ## Post-creation: notification contacts
 

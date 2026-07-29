@@ -35,6 +35,8 @@ make cluster.public.bootstrap
 
 Example clusters: `public`, `egress-zero`, `byo-vpc`, `byo-vpc-egress-zero` — see [clusters/README.md](clusters/README.md).
 
+Admin credentials (HTPasswd) are stored once in AWS Secrets Manager as `{cluster_name}-credentials` (JSON: `user`, `password`, `url`). Retrieve with `cluster_credentials_secret_arn` or `make cluster.<name>.show-credentials`. See [Authentication](docs/getting-started/authentication.md).
+
 ## Repository Structure
 
 The repository is organized around infrastructure modules:

@@ -76,14 +76,31 @@ output "identity_provider_name" {
   sensitive   = false
 }
 
+output "cluster_credentials_secret_name" {
+  description = "Name of the AWS Secrets Manager secret containing cluster credentials JSON (user, password, url). Persists through sleep."
+  value       = module.cluster.cluster_credentials_secret_name
+  sensitive   = false
+}
+
+output "cluster_credentials_secret_arn" {
+  description = <<EOF
+  ARN of the AWS Secrets Manager secret containing cluster credentials JSON:
+    {"user":"...","password":"...","url":"https://api...:6443"}
+  This is the single source of truth for admin credentials (persists through sleep).
+  Retrieve the password with:
+    aws secretsmanager get-secret-value --secret-id <arn> --query SecretString --output text | jq -r .password
+  EOF
+  value       = module.cluster.cluster_credentials_secret_arn
+  sensitive   = false
+}
+
 output "admin_password_secret_arn" {
   description = <<EOF
-  ARN of the AWS Secrets Manager secret containing the admin password.
-  This secret persists through sleep operations for easy cluster restart.
-  Use AWS CLI to retrieve the password:
-    aws secretsmanager get-secret-value --secret-id <arn> --query SecretString --output text
+  Deprecated alias for cluster_credentials_secret_arn (same ARN).
+  Secret payload is JSON (user/password/url), not a plain password string.
+  Prefer cluster_credentials_secret_arn. Kept for backward compatibility with existing scripts.
   EOF
-  value       = length(aws_secretsmanager_secret.admin_password) > 0 ? aws_secretsmanager_secret.admin_password[0].arn : null
+  value       = module.cluster.cluster_credentials_secret_arn
   sensitive   = false
 }
 

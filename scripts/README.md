@@ -136,7 +136,7 @@ DEBUG=true make cluster.<cluster-name>.bootstrap
 
 ### Utility Scripts
 
-- **`get-admin-password.sh`**: Get admin password from AWS Secrets Manager
+- **`get-admin-password.sh`**: Get admin password from the cluster credentials Secrets Manager secret (`{cluster}-credentials` JSON `.password`)
 - **`get-k8s-token.sh`**: Extract Kubernetes token via `oc login` with retry logic
 - **`get-infra-outputs.sh`**: Extract infrastructure outputs and export as TF_VAR_* environment variables
 - **`check-cluster.sh`**: Validate cluster directory exists
