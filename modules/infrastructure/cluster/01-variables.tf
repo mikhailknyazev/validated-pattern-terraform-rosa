@@ -226,6 +226,18 @@ variable "channel_group" {
   nullable    = false
 }
 
+variable "channel" {
+  description = "Y-stream specific channel for the cluster version (e.g., 'stable-4.16'). This parameter specifies the upgrade path for the cluster. Cannot be used together with 'channel_group'."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.channel == null || can(regex("^(stable|fast|candidate|eus)-\\d+\\.\\d+$", var.channel))
+    error_message = "The 'channel' parameter must follow the format '<channel_group>-<version>' (e.g., 'stable-4.16')"
+  }
+}
+
 variable "openshift_version" {
   description = "OpenShift version to pin (optional)"
   type        = string

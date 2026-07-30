@@ -144,6 +144,7 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   name           = var.cluster_name
   cloud_region   = var.region
   aws_account_id = data.aws_caller_identity.current.account_id
+  channel        = var.channel
 
   # AWS billing account ID (optional, defaults to current account)
   aws_billing_account_id = var.aws_billing_account_id != null ? var.aws_billing_account_id : data.aws_caller_identity.current.account_id
@@ -209,7 +210,7 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   # Version configuration
   # Use determined version (provided or latest installable)
   version       = local.openshift_version_to_use
-  channel_group = var.channel_group
+  channel_group = var.channel == null ? var.channel_group : null
 
   # Compute machine type (used for default machine pool)
   compute_machine_type = var.default_instance_type
@@ -536,41 +537,21 @@ data "aws_vpc_endpoint" "rosa_api" {
   ]
 }
 
-# Create ingress rules for each allowed CIDR block on each security group attached to the VPC endpoint
-# ROSA may attach multiple security groups to the VPC endpoint
-# Use for_each with a set of tuples (security_group_id, cidr) for better resource stability
-locals {
-  # Create a set of tuples: each security group ID paired with each CIDR block
-  api_endpoint_security_group_rules = local.persists_through_sleep && length(var.api_endpoint_allowed_cidrs) > 0 && length(data.aws_vpc_endpoint.rosa_api) > 0 ? {
-    for pair in flatten([
-      for sg_id in data.aws_vpc_endpoint.rosa_api[0].security_group_ids : [
-        for cidr in var.api_endpoint_allowed_cidrs : {
-          key               = "${sg_id}_${replace(cidr, "/", "_")}"
-          security_group_id = sg_id
-          cidr              = cidr
-        }
-      ]
-    ]) : pair.key => pair
-  } : {}
-}
-
+# Create ingress rules for each allowed CIDR block on the VPC endpoint's security groups
+# Keys are derived from the static CIDR list so for_each is known at plan time (day-1 safe)
+# ROSA typically attaches one security group but we handle multiple via count on the data source
 resource "aws_vpc_security_group_ingress_rule" "api_endpoint_access" {
-  for_each = local.api_endpoint_security_group_rules
+  for_each = local.persists_through_sleep && length(var.api_endpoint_allowed_cidrs) > 0 ? {
+    for cidr in var.api_endpoint_allowed_cidrs : replace(cidr, "/", "_") => cidr
+  } : {}
 
-  security_group_id = each.value.security_group_id
-  cidr_ipv4         = each.value.cidr
+  security_group_id = tolist(data.aws_vpc_endpoint.rosa_api[0].security_group_ids)[0]
+  cidr_ipv4         = each.value
   from_port         = 443
   ip_protocol       = "tcp"
   to_port           = 443
 
-  description = "Allow HTTPS access to ROSA HCP API endpoint from ${each.value.cidr}"
-
-  lifecycle {
-    # Ignore changes to security_group_id as it's managed by ROSA
-    ignore_changes = [
-      security_group_id
-    ]
-  }
+  description = "Allow HTTPS access to ROSA HCP API endpoint from ${each.value}"
 
   depends_on = [
     rhcs_cluster_rosa_hcp.main,

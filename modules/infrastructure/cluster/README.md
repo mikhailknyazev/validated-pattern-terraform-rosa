@@ -146,6 +146,7 @@ module "cluster" {
 | pod_cidr | CIDR block for pods | `string` | `"10.128.0.0/14"` |
 | host_prefix | Host prefix for subnet allocation | `number` | `23` |
 | channel_group | Channel group for OpenShift version | `string` | `"stable"` |
+| channel | Y-stream specific channel for the cluster version (e.g., 'stable-4.16', 'fast-4.22'). Specifies the upgrade path for the cluster. Cannot be used together with channel_group. Requires RHCS provider >= 1.7.7 | `string` | `null` |
 | openshift_version | OpenShift version to pin for the control plane. If not provided, automatically uses latest installable version | `string` | `null` |
 | upgrade_acknowledgements_for | Acknowledgement for minor version upgrade (e.g., '4.22'). Required when upgrading between minor versions | `string` | `null` |
 | default_machine_pool_version | OpenShift version for the default machine pool. If null, Terraform does not manage the worker node version. Set separately from openshift_version to stage upgrades (control plane first, then workers) | `string` | `null` |

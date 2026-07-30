@@ -301,6 +301,18 @@ variable "aws_private_ca_arn" {
   nullable    = true
 }
 
+variable "channel" {
+  description = "Y-stream specific channel for the cluster version (e.g., 'stable-4.16', 'fast-4.22'). Cannot be used together with channel_group. Requires RHCS provider >= 1.7.7."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.channel == null || can(regex("^(stable|fast|candidate|eus)-\\d+\\.\\d+$", var.channel))
+    error_message = "The 'channel' parameter must follow the format '<channel_group>-<version>' (e.g., 'stable-4.16', 'fast-4.22')."
+  }
+}
+
 variable "openshift_version" {
   description = "OpenShift version to pin"
   type        = string
@@ -707,4 +719,15 @@ variable "custom_permissions_boundary_arn" {
   type        = string
   default     = null
   nullable    = true
+}
+
+#------------------------------------------------------------------------------
+# VPC endpoint CIDR block allows for security group
+#------------------------------------------------------------------------------
+
+variable "api_endpoint_allowed_cidrs" {
+  description = "Optional list of IPv4 CIDR blocks allowed to access the ROSA HCP API endpoint. By default, the VPC endpoint security group only allows access from within the VPC. This variable allows you to add additional CIDR blocks (e.g., VPN ranges, bastion host IPs, or other VPCs)."
+  type        = list(string)
+  default     = []
+  nullable    = false
 }
