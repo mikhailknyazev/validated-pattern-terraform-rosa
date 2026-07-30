@@ -61,7 +61,7 @@ resource "aws_kms_alias" "efs" {
 # Persists through sleep operation (not gated by persists_through_sleep)
 # Reference: ./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/1.main.tf:5-12
 resource "aws_kms_key" "etcd" {
-  count = var.enable_storage && var.create_kms_keys && var.etcd_encryption && var.etcd_kms_key_arn == null ? 1 : 0
+  count = var.etcd_encryption && var.etcd_kms_key_arn == null ? 1 : 0
 
   description             = "KMS key for etcd encryption for cluster ${var.cluster_name}"
   deletion_window_in_days = var.kms_key_deletion_window
@@ -77,7 +77,7 @@ resource "aws_kms_key" "etcd" {
 # KMS key alias for etcd
 # Persists through sleep operation (not gated by persists_through_sleep)
 resource "aws_kms_alias" "etcd" {
-  count = var.enable_storage && var.create_kms_keys && var.etcd_encryption && var.etcd_kms_key_arn == null ? 1 : 0
+  count = var.etcd_encryption && var.etcd_kms_key_arn == null ? 1 : 0
 
   name          = "alias/${var.cluster_name}-etcd"
   target_key_id = aws_kms_key.etcd[0].key_id
