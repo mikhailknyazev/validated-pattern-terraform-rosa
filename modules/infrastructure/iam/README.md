@@ -92,7 +92,7 @@ module "iam" {
 | ebs_kms_key_arn | External KMS key ARN for EBS volume encryption. Takes precedence over internal key | `string` | `null` | no |
 | efs_kms_key_arn | External KMS key ARN for EFS encryption. Takes precedence over internal key | `string` | `null` | no |
 | etcd_kms_key_arn | External KMS key ARN for etcd encryption. Takes precedence over internal key | `string` | `null` | no |
-| etcd_encryption | Enable etcd encryption (requires etcd KMS key via ARN or create_kms_keys) | `bool` | `false` | no |
+| etcd_encryption | Enable etcd encryption. When true, automatically creates an internal KMS key if no external etcd_kms_key_arn is provided (does not require enable_storage or create_kms_keys) | `bool` | `false` | no |
 | kms_key_deletion_window | KMS key deletion window in days (only used when create_kms_keys is true) | `number` | `10` | no |
 | enable_control_plane_log_forwarding | Enable control plane log forwarding IAM resources (new ROSA managed log forwarder). Replaces legacy audit logging | `bool` | `false` | no |
 | control_plane_log_cloudwatch_enabled | Enable CloudWatch destination for control plane log forwarding. Default disabled for cost; S3 is more cost-effective | `bool` | `false` | no |
@@ -169,15 +169,17 @@ This ensures multiple clusters can coexist in the same AWS account without role 
 KMS keys can be provided in two ways:
 
 1. **External ARNs (recommended)**: Pass `ebs_kms_key_arn`, `efs_kms_key_arn`, and/or `etcd_kms_key_arn` via tfvars. External ARNs always take precedence.
-2. **Internal creation**: Set `create_kms_keys = true` to create keys within the module. Internal keys are only created when no external ARN is provided for that key type.
+2. **Internal creation**: Set `create_kms_keys = true` to create EBS/EFS keys within the module. Internal keys are only created when no external ARN is provided for that key type.
 
-By default (`create_kms_keys = false` and no external ARNs), no KMS encryption is applied.
+By default (`create_kms_keys = false` and no external ARNs), no KMS encryption is applied for EBS/EFS.
+
+**ETCD KMS key** is handled independently: setting `etcd_encryption = true` automatically creates an internal KMS key if no `etcd_kms_key_arn` is provided. This does not require `enable_storage` or `create_kms_keys` to be set.
 
 **Important**: External KMS keys must be tagged with `red-hat = "true"` for the ROSA KMS provider operator to access them. Without this tag, etcd encryption will fail during cluster installation.
 
-- **EBS KMS Key**: Used for EBS root volume encryption on worker nodes
-- **EFS KMS Key**: Used for EFS file system encryption (used by cluster module)
-- **ETCD KMS Key**: Used for etcd data-at-rest encryption (requires `etcd_encryption = true`)
+- **EBS KMS Key**: Used for EBS root volume encryption on worker nodes (requires `enable_storage` and `create_kms_keys`)
+- **EFS KMS Key**: Used for EFS file system encryption (requires `enable_storage` and `create_kms_keys`)
+- **ETCD KMS Key**: Used for etcd data-at-rest encryption (created automatically when `etcd_encryption = true`)
 
 Internally created KMS keys persist through sleep operations (tagged with `persists_through_sleep = "true"`).
 

@@ -66,7 +66,7 @@ rosa-hcp-infrastructure/
 **Infrastructure** (`modules/infrastructure/`):
 - **Network** (`network-public`, `network-private`, `network-existing`): VPC, subnets, NAT gateways, VPC endpoints
 - **IAM** (`iam`): IAM roles, OIDC configuration, **KMS encryption** (EBS, EFS, ETCD — via external ARNs or internal key creation), **IAM roles for operators** (CloudWatch logging, Cert Manager, Secrets Manager, CSI drivers)
-- **Cluster** (`cluster`): ROSA HCP cluster, machine pools, identity provider, **EFS file system**, GitOps bootstrap script
+- **Cluster** (`cluster`): ROSA HCP cluster, machine pools, identity provider, **EFS file system**, GitOps bootstrap script, **API endpoint CIDR restrictions**, **channel-based version pinning**
 - **Bastion** (`bastion`): Deprecated; optional bastion for sshuttle (use Client VPN instead)
 - **Client VPN** (`client-vpn`): Optional AWS Client VPN endpoint for private cluster access (recommended)
 
