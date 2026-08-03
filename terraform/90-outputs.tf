@@ -211,8 +211,14 @@ output "cloudwatch_logging_role_arn" {
 }
 
 output "secrets_manager_role_arn" {
-  description = "ARN of the IAM role for ArgoCD Vault Plugin to access AWS Secrets Manager (null if enable_secrets_manager_iam is false)"
+  description = "ARN of the IAM role for External Secrets Operator IRSA to access AWS Secrets Manager (null if enable_secrets_manager_iam is false)"
   value       = module.iam.secrets_manager_role_arn
+  sensitive   = false
+}
+
+output "external_secrets_role_arn" {
+  description = "Alias of secrets_manager_role_arn for External Secrets Operator IRSA (null if enable_secrets_manager_iam is false)"
+  value       = module.iam.external_secrets_role_arn
   sensitive   = false
 }
 

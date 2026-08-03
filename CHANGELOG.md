@@ -7,15 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Argo CD Vault Plugin IRSA trust (#43)**: Secrets Manager IAM role trusts only External Secrets Operator (`external-secrets-operator:external-secrets-sa`) after AVP removal from the IRSA trust policy.
+
 ### Fixed
 - **Default machine pool version pinning**: Added `version` and `upgrade_acknowledgements_for` attributes to `rhcs_hcp_machine_pool.default` resource. Previously the default machine pool's OpenShift version was unmanaged by Terraform, preventing explicit version control and minor version upgrade orchestration. The `upgrade_acknowledgements_for` variable is passed from root module through to the cluster module.
 - **Separate default machine pool version variable**: Added `default_machine_pool_version` variable (default null) so the default machine pool version is managed independently from the control plane `openshift_version`. This enables staged upgrades: upgrade the control plane first, wait for completion, then set the worker version.
 - **IAM role name 64-character limit**: Applied `substr(..., 0, 64)` to all custom IAM role names and string-literal role references, matching the upstream RHCS module pattern. Also fixed two string references in `12-storage-iam.tf` that used `var.cluster_name` instead of the correct prefix locals, and corrected the `operator_role_arns` output to use actual upstream naming conventions.
+- **Public ACM example `zero_egress` mismatch**: Set `zero_egress = false` on `dev-hub-1` / `dev-spoke-2` public recipes (was incorrectly `true` while comments described public NAT egress).
 
 ### Changed
+- **GitOps Helm chart pins (#43)**: Default `cluster-bootstrap` to `0.5.19`, `cluster-bootstrap-acm-spoke` to `0.6.14`, `cluster-bootstrap-acm-hub-registration` to `0.2.2`, `aws-privateca-issuer` to `1.6.1`, and bootstrap `app-of-apps-infrastructure` `targetRevision` to `0.2.3` (aligned with validated-pattern-helm-charts latest).
+- **Wire `gitops_git_target_revision` (#43)**: Hub bootstrap values now emit `gitTargetRevision` for cluster-bootstrap (>= `0.5.18`) so Argo CD can sync cluster-config from a branch/tag instead of hardcoded `HEAD`.
+- **Disable AVP CMP by default (#43)**: Hub/spoke bootstrap values set `argocd.plugin.enabled: false` so the Vault Plugin sidecar is not deployed when cluster-config uses native Helm + ESO.
+- **Secrets Manager IRSA for ESO (#43)**: Secrets Manager IAM role trusts External Secrets Operator (`external-secrets-operator:external-secrets-sa`); documentation prefers ESO over Argo CD Vault Plugin.
+- **Example cluster-config revision**: Example recipes set `gitops_git_target_revision = "HEAD"` explicitly (including `autonode`, now that that example lives on cluster-config `main`).
 - **Replaced scottwinkler/shell provider with null_resource**: Termination protection now uses `null_resource` with `local-exec` provisioners instead of the third-party `scottwinkler/shell` provider, removing the external provider dependency.
 
 ### Added
+- **Root `acm_mode` variable**: Wire `acm_mode` (`hub` / `spoke` / `noacm`) from root module into the cluster module so ACM example tfvars select the correct bootstrap values path.
+- **Ignore ACM import scratch files**: `.gitignore` excludes `acm-crds.yaml`, `*-import.yaml`, and `.superpowers/` (bootstrap CWD leftovers / local agent scratch).
 - **Permission boundary support**: Added `rosa_permissions_boundary_arn` and `custom_permissions_boundary_arn` optional variables for applying IAM permission boundaries. `rosa_permissions_boundary_arn` applies to ROSA account and operator roles; `custom_permissions_boundary_arn` applies to all custom IAM roles (EFS CSI, CloudWatch, cert-manager, Secrets Manager, autonode, bastion, VPC flow log). Both default to null (no boundary applied).
 - **MkDocs documentation site**: Material-themed site with GitHub Pages deployment (`.github/workflows/docs.yml`), local preview via `make docs-preview`, strict build in PR checks
 - **Layered prerequisites docs** (`docs/prerequisites/`): account, full-stack, BYO network/IAM handoff, customer intake, and validation script documentation

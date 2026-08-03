@@ -20,7 +20,7 @@ This module creates the IAM roles, OIDC configuration, and KMS keys required for
 - **CloudWatch Audit Logging IAM** (legacy, deprecated - for SIEM audit log forwarding)
 - **CloudWatch Logging IAM** (for OpenShift Logging Operator)
 - **Cert Manager IAM** (for AWS Private CA integration)
-- **Secrets Manager IAM** (for ArgoCD Vault Plugin)
+- **Secrets Manager IAM** (for External Secrets Operator IRSA)
 - Role prefixing for uniqueness across clusters
 
 ## Usage
@@ -100,9 +100,9 @@ module "iam" {
 | enable_audit_logging | [DEPRECATED] Enable CloudWatch audit logging IAM resources (legacy implementation). Use enable_control_plane_log_forwarding instead | `bool` | `false` | no |
 | enable_cloudwatch_logging | Enable CloudWatch logging IAM resources | `bool` | `false` | no |
 | enable_cert_manager_iam | Enable cert-manager IAM resources | `bool` | `false` | no |
-| enable_secrets_manager_iam | Enable Secrets Manager IAM resources | `bool` | `false` | no |
+| enable_secrets_manager_iam | Enable Secrets Manager IAM resources for External Secrets Operator IRSA (`external-secrets-operator:external-secrets-sa`) | `bool` | `false` | no |
 | aws_private_ca_arn | AWS Private CA ARN for cert-manager (optional) | `string` | `null` | no |
-| additional_secrets | Additional Secrets Manager secret names for IAM policy (optional) | `list(string)` | `null` | no |
+| additional_secrets | Additional Secrets Manager secret names for External Secrets Operator IAM policy (optional) | `list(string)` | `null` | no |
 | cluster_credentials_secret_arn | ARN of cluster credentials secret (for Secrets Manager IAM policy) | `string` | `null` | no |
 | rosa_permissions_boundary_arn | ARN of the permission boundary policy for ROSA managed IAM roles (account + operator roles). If null, no boundary is applied | `string` | `null` | no |
 | custom_permissions_boundary_arn | ARN of the permission boundary policy for custom IAM roles (EFS CSI, CloudWatch, Secrets Manager, cert-manager, etc.). If null, no boundary is applied | `string` | `null` | no |
@@ -128,6 +128,7 @@ module "iam" {
 | cloudwatch_audit_logging_role_arn | [DEPRECATED] ARN of the CloudWatch audit logging IAM role (null if enable_audit_logging is false). Use control_plane_log_forwarding_role_arn instead |
 | cloudwatch_logging_role_arn | ARN of the CloudWatch logging IAM role (null if enable_cloudwatch_logging is false) |
 | secrets_manager_role_arn | ARN of the Secrets Manager IAM role (null if enable_secrets_manager_iam is false) |
+| external_secrets_role_arn | Alias of `secrets_manager_role_arn` for External Secrets Operator IRSA (null if enable_secrets_manager_iam is false) |
 | cert_manager_role_arn | ARN of the cert-manager IAM role (null if enable_cert_manager_iam is false) |
 
 ## Account Roles
@@ -211,11 +212,19 @@ The module creates an IAM role for cert-manager to use AWS Private CA:
 
 ## Secrets Manager IAM
 
-The module creates an IAM role for ArgoCD Vault Plugin to access AWS Secrets Manager:
+The module creates an IAM role for External Secrets Operator to access AWS Secrets Manager:
 
-- **Secrets Manager Role**: IAM role for ArgoCD Vault Plugin (`openshift-gitops:vplugin`)
+- Trusts only External Secrets Operator (`external-secrets-operator:external-secrets-sa`)
 - Uses explicit secret ARN lists for maximum security (no wildcards for GetSecretValue)
-- Requires `cluster_credentials_secret_arn` from cluster module (set after cluster is created)
+- Enable by setting `enable_secrets_manager_iam = true`
+
+For External Secrets Operator integration, use the alias output and service account annotation:
+
+- Service account annotation:
+  - `eks.amazonaws.com/role-arn: <external_secrets_role_arn>`
+- Helm values path:
+  - `external-secrets-operator.serviceAccount.roleArn`
+- `external_secrets_role_arn` is an alias of `secrets_manager_role_arn` for cluster-config clarity.
 
 ## Dependencies
 

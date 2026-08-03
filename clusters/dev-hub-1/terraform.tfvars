@@ -8,7 +8,7 @@ openshift_version = "4.20.12"
 
 # Network Configuration
 network_type = "public" # Public clusters use NAT Gateway for internet egress
-zero_egress  = true     # Public clusters don't use zero egress (have internet access). Matches ROSA API property name.
+zero_egress  = false    # Public clusters don't use zero egress (have internet access). Matches ROSA API property name.
 private      = false    # Public API endpoint (independent of network_type - can have public API in private VPC or vice versa)
 region       = "ap-southeast-4"
 vpc_cidr     = "10.10.0.0/16"
@@ -25,9 +25,11 @@ default_instance_type = "m5.xlarge" # EC2 instance type for default worker nodes
 # - Multi-AZ: min=1, max=2 per AZ (each pool gets these values)
 
 # GitOps Bootstrap
-enable_gitops_bootstrap = true # Enable GitOps operator installation after cluster creation
-gitops_git_repo_url     = "https://github.com/rh-mobb/rosa-cluster-config.git"
-gitops_git_path         = "dev/dev-hub-1" # Path to cluster configuration directory in Git repo
+enable_gitops_bootstrap    = true # Enable GitOps operator installation after cluster creation
+gitops_git_repo_url        = "https://github.com/rh-mobb/rosa-cluster-config.git"
+gitops_git_path            = "dev/dev-hub-1" # Path to cluster configuration directory in Git repo
+gitops_git_target_revision = "HEAD"          # Default branch of cluster-config repo
+acm_mode                   = "hub"
 
 # Additional Machine Pools
 # Create custom machine pools beyond the default pool

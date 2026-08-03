@@ -120,16 +120,18 @@ resource "shell_script" "gitops_bootstrap" {
 | `HELM_REPO_NAME` | Name for Helm repository | `helm_repo_new` |
 | `HELM_REPO_URL` | Helm repository URL | `https://rh-mobb.github.io/validated-pattern-helm-charts/` |
 | `HELM_CHART` | Helm chart name (hub/standalone) | `cluster-bootstrap` |
-| `HELM_CHART_VERSION` | Helm chart version | `0.5.15` |
+| `HELM_CHART_VERSION` | Helm chart version | `0.5.19` |
 
 ### ACM Spoke Helm Charts
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HELM_CHART_ACM_SPOKE` | ACM spoke chart name | `cluster-bootstrap-acm-spoke` |
-| `HELM_CHART_ACM_SPOKE_VERSION` | ACM spoke chart version | `0.6.11` |
+| `HELM_CHART_ACM_SPOKE_VERSION` | ACM spoke chart version | `0.6.14` |
 | `HELM_CHART_ACM_HUB_REGISTRATION` | Hub registration chart name | `cluster-bootstrap-acm-hub-registration` |
-| `HELM_CHART_ACM_HUB_REGISTRATION_VERSION` | Hub registration chart version | `0.1.0` |
+| `HELM_CHART_ACM_HUB_REGISTRATION_VERSION` | Hub registration chart version | `0.2.2` |
+| `HELM_CHART_AWSPCA` | AWS Private CA Issuer chart name | `aws-privateca-issuer` |
+| `HELM_CHART_AWSPCA_VERSION` | AWS Private CA Issuer chart version | `1.6.1` |
 
 ### Optional Configuration
 

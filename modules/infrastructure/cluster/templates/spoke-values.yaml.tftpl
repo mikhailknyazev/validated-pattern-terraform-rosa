@@ -7,6 +7,11 @@ domain: ${cluster_domain}
 gitops_csv: ${gitops_csv}
 defaultImage: ${gitops_tools_image}
 
+# AVP CMP sidecar off by default — cluster-config uses native Helm (plugin: false) + ESO (#43).
+argocd:
+  plugin:
+    enabled: false
+
 application-gitops:
   name: application-gitops
   gitopsNamespace: application-gitops

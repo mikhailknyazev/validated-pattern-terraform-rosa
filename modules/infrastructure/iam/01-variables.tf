@@ -134,7 +134,7 @@ variable "enable_cert_manager_iam" {
 }
 
 variable "enable_secrets_manager_iam" {
-  description = "Enable Secrets Manager IAM resources"
+  description = "Enable Secrets Manager IAM resources for External Secrets Operator IRSA (external-secrets-operator:external-secrets-sa)"
   type        = bool
   default     = false
   nullable    = false
@@ -164,7 +164,7 @@ variable "aws_private_ca_arn" {
 }
 
 variable "additional_secrets" {
-  description = "Additional Secrets Manager secret names for IAM policy (optional)"
+  description = "Additional Secrets Manager secret names for External Secrets Operator IAM policy (optional)"
   type        = list(string)
   default     = null
   nullable    = true

@@ -6,6 +6,7 @@ domain: ${cluster_domain}
 csv: ${gitops_csv}
 aws_region: ${aws_region}
 defaultImage: ${gitops_tools_image}
+gitTargetRevision: ${git_target_revision}
 %{if git_path != ""}
 gitPath: ${git_path}
 %{endif}
@@ -21,8 +22,11 @@ aws_kms_key_ebs: ${aws_kms_key_ebs}
 %{if efs_file_system_id != ""}
 fileSystemId: ${efs_file_system_id}
 %{endif}
-%{if git_repo_url != ""}
+# AVP CMP sidecar off by default — cluster-config uses native Helm (plugin: false) + ESO (#43).
 argocd:
+  plugin:
+    enabled: false
+%{if git_repo_url != ""}
   initialRepositories: |
     - name: cluster-config
       type: git
@@ -39,7 +43,7 @@ argocd:
     helmRepoUrl: ${helm_repo_url}
     chart: app-of-apps-infrastructure
     project: cluster-config-project
-    targetRevision: 0.2.2
+    targetRevision: 0.2.3
     gitRepoUrl: ${git_repo_url}
     adGroup: PFAUTHAD
     gitPathFile: /infrastructure.yaml

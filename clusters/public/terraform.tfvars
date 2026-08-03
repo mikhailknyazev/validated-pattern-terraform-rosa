@@ -31,9 +31,10 @@ default_min_replicas = 2 # single-AZ minimum for HA
 default_max_replicas = 4 # allow the default pool to grow up to 2× the minimum
 
 # GitOps Bootstrap
-enable_gitops_bootstrap = true # Enable GitOps operator installation after cluster creation
-gitops_git_repo_url     = "https://github.com/rh-mobb/rosa-cluster-config.git"
-gitops_git_path         = "dev/pczarkow" # Path to cluster configuration directory in Git repo
+enable_gitops_bootstrap    = true # Enable GitOps operator installation after cluster creation
+gitops_git_repo_url        = "https://github.com/rh-mobb/rosa-cluster-config.git"
+gitops_git_path            = "dev/pczarkow" # Path to cluster configuration directory in Git repo
+gitops_git_target_revision = "HEAD"         # Default branch of cluster-config repo
 
 # Additional Machine Pools
 # Create custom machine pools beyond the default pool

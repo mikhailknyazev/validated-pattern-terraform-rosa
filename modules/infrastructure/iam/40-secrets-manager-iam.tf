@@ -1,7 +1,7 @@
 # Secrets Manager IAM Configuration
 # Reference: ./reference/pfoster/rosa-hcp-dedicated-vpc/terraform/3.secrets.tf
-# This configuration creates an IAM role and policy for ArgoCD to access AWS Secrets Manager via OIDC.
-# The role uses OIDC federation to allow the ArgoCD Vault Plugin service account to assume the role.
+# This configuration creates an IAM role and policy for External Secrets Operator to access AWS
+# Secrets Manager via OIDC (IRSA).
 #
 # IMPORTANT: The OIDC endpoint URL must NOT include the "https://" prefix when used in IAM trust policies.
 # Reference: Red Hat documentation shows stripping https:// from the OIDC endpoint URL
@@ -50,7 +50,7 @@ resource "aws_iam_policy" "secrets_manager" {
 
   name        = "${var.cluster_name}-rosa-secretsmanager"
   path        = "/"
-  description = "IAM policy for ArgoCD Vault Plugin to access AWS Secrets Manager (restricted to explicit secret ARNs)"
+  description = "IAM policy for External Secrets Operator to access AWS Secrets Manager (restricted to explicit secret ARNs)"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -84,8 +84,8 @@ resource "aws_iam_policy" "secrets_manager" {
 }
 
 # IAM Role for Secrets Manager
-# Uses OIDC federation to allow the ArgoCD Vault Plugin service account to assume this role
-# Service account: system:serviceaccount:openshift-gitops:vplugin
+# Uses OIDC federation for External Secrets Operator:
+#   system:serviceaccount:external-secrets-operator:external-secrets-sa
 resource "aws_iam_role" "secrets_manager" {
   count = local.persists_through_sleep && var.enable_secrets_manager_iam ? 1 : 0
 
@@ -103,7 +103,7 @@ resource "aws_iam_role" "secrets_manager" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
           StringEquals = {
-            "${local.oidc_endpoint_url_normalized}:sub" = "system:serviceaccount:openshift-gitops:vplugin"
+            "${local.oidc_endpoint_url_normalized}:sub" = "system:serviceaccount:external-secrets-operator:external-secrets-sa"
           }
         }
       }

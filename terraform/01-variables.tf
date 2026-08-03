@@ -630,7 +630,7 @@ variable "gitops_git_repo_url" {
 }
 
 variable "gitops_git_target_revision" {
-  description = "Git target revision (branch/tag/commit) for cluster-config repository used by ArgoCD value source. Defaults to HEAD (default branch)."
+  description = "Git target revision (branch/tag/commit) for cluster-config repository used by Argo CD ApplicationSet values source. Passed through to cluster-bootstrap gitTargetRevision (chart >= 0.5.18). Defaults to HEAD (default branch)."
   type        = string
   default     = "HEAD"
   nullable    = false
@@ -648,6 +648,23 @@ variable "gitops_csv" {
   type        = string
   default     = "openshift-gitops-operator.v1.19.2"
   nullable    = false
+}
+
+variable "acm_mode" {
+  description = <<-EOF
+    ACM (Advanced Cluster Management) mode for GitOps bootstrap values selection.
+    - "noacm": Standalone cluster (default)
+    - "hub": ACM hub cluster (uses app-of-apps-acm-team-onboarding)
+    - "spoke": ACM spoke cluster (use make cluster.<name>.bootstrap-spoke)
+  EOF
+  type        = string
+  default     = "noacm"
+  nullable    = false
+
+  validation {
+    condition     = contains(["hub", "spoke", "noacm"], var.acm_mode)
+    error_message = "acm_mode must be one of: hub, spoke, noacm."
+  }
 }
 
 variable "enable_cert_manager_iam" {
@@ -672,7 +689,7 @@ variable "enable_cloudwatch_logging" {
 }
 
 variable "enable_secrets_manager_iam" {
-  description = "Enable IAM role and policy for ArgoCD Vault Plugin to access AWS Secrets Manager. When enabled, creates IAM role for openshift-gitops:vplugin service account. Secrets access is restricted to explicit ARN list for security."
+  description = "Enable IAM role and policy for External Secrets Operator to access AWS Secrets Manager (IRSA for external-secrets-operator:external-secrets-sa). Secrets access is restricted to an explicit ARN list for security."
   type        = bool
   default     = false
   nullable    = false

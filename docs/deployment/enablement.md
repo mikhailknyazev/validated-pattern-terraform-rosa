@@ -347,9 +347,13 @@ flowchart LR
 
 | Chart | Pinned version |
 |-------|----------------|
-| `app-of-apps-infrastructure` | `0.2.2` |
+| `app-of-apps-infrastructure` | `0.2.3` |
 | `app-of-apps-application` | `1.5.8` |
 | `app-of-apps-acm-team-onboarding` | `0.4.1` |
+| `cluster-bootstrap` | `0.5.19` (module / script default) |
+| `cluster-bootstrap-acm-spoke` | `0.6.14` (module / script default) |
+| `cluster-bootstrap-acm-hub-registration` | `0.2.2` (module / script default) |
+| `aws-privateca-issuer` | `1.6.1` (module / script default) |
 
 Align your fork with these versions, or update the template in your infrastructure fork.
 
@@ -360,7 +364,15 @@ Align your fork with these versions, or update the template in your infrastructu
 
 ### GitOps CMP tools container image
 
-The `cluster-bootstrap` and `cluster-bootstrap-acm-spoke` charts configure an Argo CD repo-server **ConfigManagementPlugin (CMP) sidecar** named `avp`. That sidecar runs `helm`, `argocd-vault-plugin`, `find`, `git`, and related tools so Argo CD can render Application sources marked `plugin: true` in cluster-config (for example AutoNode charts that use AVP with AWS Secrets Manager).
+**Default secrets path:** AWS Secrets Manager integration uses the Red Hat External Secrets Operator (ESO), not AVP. Standard flow is:
+
+1. Terraform creates IAM role access for Secrets Manager ([`enable_secrets_manager_iam = true`](../../terraform/01-variables.tf))
+2. ESO uses `external-secrets-operator:external-secrets-sa` IRSA
+3. `ClusterSecretStore` + `ExternalSecret` sync remote values into Kubernetes `Secret` objects
+
+See the [`external-secrets-operator` chart](https://github.com/rh-mobb/validated-pattern-helm-charts/tree/main/charts/external-secrets-operator) in your cluster-config infrastructure applications and the Terraform toggle [`enable_secrets_manager_iam`](../../terraform/01-variables.tf).
+
+The `gitops_tools_image` setting is now **optional CMP tooling** for clusters that still run Argo CD Applications with `plugin: true` during migration. It is not required for ESO-based Secrets Manager sync.
 
 **Upstream image** (multi-arch, built from [hack/docker/gitops-tools/](../../hack/docker/gitops-tools/)):
 
@@ -368,7 +380,7 @@ The `cluster-bootstrap` and `cluster-bootstrap-acm-spoke` charts configure an Ar
 ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:<tag>
 ```
 
-CI publishes `:latest` and `:sha` tags on merge to main. Pin a digest or SHA tag in production rather than floating `:latest`.
+CI publishes `:latest` and `:sha` tags on merge to main. Pin a digest or SHA tag in production rather than floating `:latest` when CMP plugin mode is enabled.
 
 **When to re-host:** Mirror this image into **your private registry** when any of the following apply:
 
@@ -881,7 +893,7 @@ flowchart TD
 | Bootstrap can't reach GitHub | Egress-zero or no VPC endpoints for Git | CodeCommit mirroring — [egress-zero GitOps guide](../guides/egress-zero-gitops.md) |
 | CMP plugin apps stuck `Sync: Unknown` (`find: command not found` or plugin sidecar errors) | Repo-server CMP image missing tools or wrong/unreachable image | Use current `gitops-tools` image; re-host to private registry and set `gitops_tools_image` / `defaultImage` in bootstrap templates — [§3c GitOps CMP tools image](#gitops-cmp-tools-container-image) |
 | Repo-server can't pull CMP sidecar image | `ghcr.io` blocked (egress-zero, registry policy) | Mirror `gitops-tools` to ECR; update `defaultImage` in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) and [spoke-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) |
-| `gitops_git_target_revision` ignored | Not wired in hub-values template | Use cluster-config default branch or edit template |
+| Wrong cluster-config branch synced | `gitops_git_target_revision` still `HEAD` or chart older than `0.5.18` | Set `gitops_git_target_revision` in tfvars and use `cluster-bootstrap` >= `0.5.18` |
 | Helm chart version mismatch | Versions hardcoded in template | Pin versions in your helm fork to match template |
 | ACM examples default to `noacm` | `acm_mode` not in example tfvars | Set module variable; use `bootstrap-spoke` target |
 | Worker nodes not ready | Bootstrap waits for ≥2 Ready workers on single-AZ (60 min timeout for `.metal`); long NotReady on bare metal may need `default_auto_repair = false` | Set in `terraform.tfvars`; override `WORKER_READY_MAX_ATTEMPTS` if needed |
@@ -892,7 +904,6 @@ flowchart TD
 These improvements are documented as future work:
 
 - Expose `acm_mode`, `helm_repo_url`, and chart version pins at root `terraform.tfvars`
-- Wire `gitops_git_target_revision` into [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl)
 - Automate CodeCommit repository creation and mirroring (see internal `docs/TODO.md`)
 
 ---
@@ -908,7 +919,7 @@ These improvements are documented as future work:
 | `enable_gitops_bootstrap` | Enable bootstrap outputs and script | `true` |
 | `gitops_git_repo_url` | cluster-config repository URL | `https://github.com/<org>/acme-cluster-config.git` |
 | `gitops_git_path` | Path under repo root | `dev/acme-dev` |
-| `gitops_git_target_revision` | Git branch/tag (limited template support) | `HEAD` |
+| `gitops_git_target_revision` | Git branch/tag/commit for cluster-config values source (`gitTargetRevision`) | `HEAD` or `feature/my-branch` |
 
 **Cluster module only** ([modules/infrastructure/cluster/01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)) — set via fork or extend root passthrough:
 
@@ -916,9 +927,11 @@ These improvements are documented as future work:
 |----------|---------|-------------|
 | `acm_mode` | `noacm` | `hub`, `spoke`, or `noacm` |
 | `helm_repo_url` | `https://rh-mobb.github.io/validated-pattern-helm-charts/` | Your published Helm repo |
-| `helm_chart_version` | `0.5.15` | `cluster-bootstrap` chart version |
-| `helm_chart_acm_spoke_version` | `0.6.11` | `cluster-bootstrap-acm-spoke` chart version |
-| `gitops_tools_image` | `ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest` | CMP repo-server sidecar image; re-host for egress-zero or registry policy — see [§3c](#gitops-cmp-tools-container-image) |
+| `helm_chart_version` | `0.5.19` | `cluster-bootstrap` chart version |
+| `helm_chart_acm_spoke_version` | `0.6.14` | `cluster-bootstrap-acm-spoke` chart version |
+| `helm_chart_acm_hub_registration_version` | `0.2.2` | `cluster-bootstrap-acm-hub-registration` chart version |
+| `helm_chart_awspca_version` | `1.6.1` | `aws-privateca-issuer` chart version |
+| `gitops_tools_image` | `ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest` | Optional CMP repo-server sidecar tooling image (used when `plugin: true`); re-host for egress-zero or registry policy — see [§3c](#gitops-cmp-tools-container-image) |
 | `gitops_csv` | `openshift-gitops-operator.v1.19.2` | GitOps operator CSV |
 | `hub_credentials_secret_name` | `""` | Hub secret for spoke mode |
 | `acm_region` | `""` | Hub region for spoke mode |

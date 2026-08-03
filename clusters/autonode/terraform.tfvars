@@ -29,7 +29,7 @@ persists_through_sleep = true
 enable_gitops_bootstrap      = true
 gitops_git_repo_url          = "https://github.com/rh-mobb/rosa-cluster-config.git"
 gitops_git_path              = "dev/autonode"
-gitops_git_target_revision   = "autonode"
+gitops_git_target_revision   = "HEAD" # Default branch of cluster-config repo
 enable_persistent_dns_domain = false
 
 # AutoNode: Terraform creates Karpenter IAM + tags + rhcs_cluster_rosa_hcp auto_node block

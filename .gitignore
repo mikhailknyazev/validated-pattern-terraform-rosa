@@ -66,8 +66,15 @@ Thumbs.db
 # Scratch directory for temporary files
 scratch/
 
+# Local agent / SDD scratch (not part of the product tree)
+.superpowers/
+
 # Generated bootstrap values (Terraform output, same dir as tfvars)
 clusters/*/cluster-bootstrap-values.yaml
+
+# ACM spoke import manifests written by bootstrap-gitops.sh into CWD (may contain hub kubeconfig)
+acm-crds.yaml
+*-import.yaml
 
 kubeconfig
 values.generated.yaml

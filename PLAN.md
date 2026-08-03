@@ -864,6 +864,14 @@ GitOps bootstrap is integrated into the cluster module. After cluster deployment
 
 ## Architecture Decisions
 
+### ESO Replaces AVP for Secrets Manager
+- **Decision**: Use the Red Hat External Secrets Operator (ESO) as the default integration path for AWS Secrets Manager instead of Argo CD Vault Plugin (AVP).
+- **Status**: Accepted (validated on public hub; AVP IRSA trust removed — #43 Task 8).
+- **Consequences**:
+  - Cluster-config defaults use native Helm rendering (`plugin: false`) and ESO resources (`ClusterSecretStore` + `ExternalSecret`) for secret sync.
+  - Secrets Manager IAM trust is ESO-only (`external-secrets-operator:external-secrets-sa`).
+  - Bootstrap charts keep AVP CMP templates gated behind `argocd.plugin.enabled` (default `false`); optional template deletion is a later chart cleanup.
+
 ### Why a Single Cluster Credentials Secret?
 Admin credentials are stored once in AWS Secrets Manager as `{cluster_name}-credentials` (JSON: `user`, `password`, `url`), created by the cluster module identity-provider resources. A previous root-level plain-password secret (`rosa-hcp-{cluster}-admin-password`) duplicated the same credential and caused drift risk (issue #28). Login/info scripts and GitOps bootstrap share this secret. Longer-term, issue #29 may replace long-lived HTPasswd passwords with dynamic IDP credentials.
 

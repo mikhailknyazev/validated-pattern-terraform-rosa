@@ -113,19 +113,20 @@ output "cluster_domain" {
 output "gitops_bootstrap_hub_values" {
   description = "Helm values YAML for cluster-bootstrap chart (hub/standalone mode)"
   value = var.enable_gitops_bootstrap ? templatefile("${path.module}/templates/hub-values.yaml.tftpl", {
-    cluster_name       = var.cluster_name
-    cluster_domain     = local.cluster_domain
-    gitops_csv         = var.gitops_csv
-    aws_region         = var.region
-    git_path           = var.git_path != null ? var.git_path : ""
-    aws_account_id     = local.aws_account_id
-    ecr_account        = var.ecr_account != null ? var.ecr_account : ""
-    aws_kms_key_ebs    = var.kms_key_arn != null ? var.kms_key_arn : ""
-    efs_file_system_id = var.efs_file_system_id != null ? var.efs_file_system_id : (length(aws_efs_file_system.main) > 0 ? aws_efs_file_system.main[0].id : "")
-    git_repo_url       = var.gitops_git_repo_url != null ? var.gitops_git_repo_url : ""
-    helm_repo_url      = var.helm_repo_url
-    acm_mode           = var.acm_mode
-    gitops_tools_image = var.gitops_tools_image
+    cluster_name        = var.cluster_name
+    cluster_domain      = local.cluster_domain
+    gitops_csv          = var.gitops_csv
+    aws_region          = var.region
+    git_path            = var.git_path != null ? var.git_path : ""
+    git_target_revision = var.gitops_git_target_revision
+    aws_account_id      = local.aws_account_id
+    ecr_account         = var.ecr_account != null ? var.ecr_account : ""
+    aws_kms_key_ebs     = var.kms_key_arn != null ? var.kms_key_arn : ""
+    efs_file_system_id  = var.efs_file_system_id != null ? var.efs_file_system_id : (length(aws_efs_file_system.main) > 0 ? aws_efs_file_system.main[0].id : "")
+    git_repo_url        = var.gitops_git_repo_url != null ? var.gitops_git_repo_url : ""
+    helm_repo_url       = var.helm_repo_url
+    acm_mode            = var.acm_mode
+    gitops_tools_image  = var.gitops_tools_image
   }) : null
   sensitive = false
 }

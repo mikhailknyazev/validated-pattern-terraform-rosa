@@ -259,6 +259,7 @@ module "cluster" {
   gitops_git_repo_url        = var.gitops_git_repo_url
   gitops_csv                 = var.gitops_csv
   gitops_git_target_revision = var.gitops_git_target_revision
+  acm_mode                   = var.acm_mode
 
   # Termination Protection (IAM resources are in IAM module)
   enable_termination_protection = var.enable_termination_protection
