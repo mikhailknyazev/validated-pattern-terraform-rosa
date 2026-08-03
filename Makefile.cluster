@@ -115,6 +115,8 @@ sleep: check-cluster
 	@echo "$(GREEN)To wake the cluster, run: make cluster.$(CLUSTER_NAME).apply$(NC)"
 
 # GitOps operations
+# Creates short-lived bootstrap HTPasswd admin (#29), runs bootstrap, always tears it down.
+# Teardown is explicit (not EXIT trap) so Make reports the GitOps exit code, not destroy's.
 bootstrap: init ensure-tunnel
 	@echo "$(BLUE)Bootstrapping GitOps operator for $(CLUSTER_NAME)...$(NC)"
 	@cd $(TERRAFORM_DIR) && \
@@ -135,10 +137,21 @@ bootstrap: init ensure-tunnel
 		terraform output -no-color -raw "$$VALUES_OUTPUT" > "../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
 		export BOOTSTRAP_VALUES_FILE="$$PWD/../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
 		echo "$(BLUE)Exporting environment variables from Terraform outputs...$(NC)" && \
-		eval $$(terraform output -no-color -raw gitops_bootstrap_env_exports 2>/dev/null) && \
+		eval "$$(terraform output -no-color -raw gitops_bootstrap_env_exports 2>/dev/null)" && \
+		echo "$(BLUE)Creating short-lived bootstrap HTPasswd admin...$(NC)" && \
+		BOOTSTRAP_EXPORTS=$$(../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) create) || exit 1 && \
+		eval "$$BOOTSTRAP_EXPORTS" && \
 		echo "$(BLUE)Running GitOps bootstrap script: $$SCRIPT_PATH$(NC)" && \
-		bash "$$SCRIPT_PATH" || \
-		(echo "$(YELLOW)GitOps bootstrap failed. Check the output above for details.$(NC)" && exit 1)
+		set +e && \
+		bash "$$SCRIPT_PATH"; \
+		GITOPS_RC=$$?; \
+		set -e && \
+		echo "$(YELLOW)Tearing down bootstrap admin...$(NC)" && \
+		../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) destroy || true && \
+		if [ "$$GITOPS_RC" -ne 0 ]; then \
+			echo "$(YELLOW)GitOps bootstrap failed (exit $$GITOPS_RC). Check the output above for details.$(NC)"; \
+			exit "$$GITOPS_RC"; \
+		fi
 	@echo "$(GREEN)GitOps bootstrap completed for $(CLUSTER_NAME)$(NC)"
 
 # GitOps spoke bootstrap - registers cluster with ACM hub
@@ -249,7 +262,8 @@ show-timing: check-cluster
 			echo "$(YELLOW)Note: Install 'jq' for better formatted output: brew install jq$(NC)"; \
 		fi
 
-login: init ensure-tunnel
+# Read terraform outputs only (no init). Fails clearly if state/outputs are missing.
+login: check-cluster ensure-tunnel
 	@$(SCRIPT_DIR)/info/login.sh $(CLUSTER_NAME)
 
 verify: check-cluster ## Verify cluster deployment, GitOps operator, and ApplicationSet

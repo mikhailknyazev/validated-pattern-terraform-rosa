@@ -49,7 +49,9 @@ rosa-hcp-infrastructure/
 │       ├── network-private/    # Private VPC (PrivateLink API)
 │       ├── network-existing/   # Use existing VPC
 │       ├── iam/                # IAM roles, OIDC configuration, KMS keys, operator IAM roles
-│       ├── cluster/            # ROSA HCP Cluster module (includes identity provider, EFS storage, GitOps bootstrap script)
+│       ├── cluster/            # ROSA HCP Cluster module (optional break-glass IDP, EFS, GitOps bootstrap)
+│       ├── htpasswd-idp/       # Shared HTPasswd IDP + group membership (bootstrap + break-glass)
+│       ├── bootstrap-admin/    # Short-lived bootstrap admin (wrapper around htpasswd-idp)
 │       ├── bastion/            # Bastion host (deprecated; use client-vpn)
 │       └── client-vpn/         # AWS Client VPN for private cluster access (recommended)
 └── clusters/                   # Cluster configurations
@@ -66,7 +68,9 @@ rosa-hcp-infrastructure/
 **Infrastructure** (`modules/infrastructure/`):
 - **Network** (`network-public`, `network-private`, `network-existing`): VPC, subnets, NAT gateways, VPC endpoints
 - **IAM** (`iam`): IAM roles, OIDC configuration, **KMS encryption** (EBS, EFS, ETCD — via external ARNs or internal key creation), **IAM roles for operators** (CloudWatch logging, Cert Manager, Secrets Manager, CSI drivers)
-- **Cluster** (`cluster`): ROSA HCP cluster, machine pools, identity provider, **EFS file system**, GitOps bootstrap script, **API endpoint CIDR restrictions**, **channel-based version pinning**
+- **Cluster** (`cluster`): ROSA HCP cluster, machine pools, optional break-glass HTPasswd admin, **EFS file system**, GitOps bootstrap outputs, **API endpoint CIDR restrictions**, **channel-based version pinning**
+- **HTPasswd IDP** (`htpasswd-idp`): Shared HTPasswd identity provider + group membership
+- **Bootstrap admin** (`bootstrap-admin`): Short-lived bootstrap HTPasswd user for GitOps `oc login`
 - **Bastion** (`bastion`): Deprecated; optional bastion for sshuttle (use Client VPN instead)
 - **Client VPN** (`client-vpn`): Optional AWS Client VPN endpoint for private cluster access (recommended)
 
@@ -129,7 +133,7 @@ Local preview: `make docs-preview`
 - ✅ **network-private**: Production-ready
 - ⚠️ **network-egress-zero**: Deprecated (use `network-private` with `zero_egress = true`)
 - ✅ **iam**: Production-ready (includes KMS keys, IAM roles for operators)
-- ✅ **cluster**: Production-ready (includes identity provider, EFS storage, GitOps bootstrap script)
+- ✅ **cluster**: Production-ready (optional break-glass IDP, EFS storage, GitOps bootstrap)
 - ✅ **bastion**: Deprecated (use client-vpn)
 
 ## Development Setup

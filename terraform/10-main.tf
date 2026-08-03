@@ -214,10 +214,10 @@ module "cluster" {
   availability_zones = local.network.private_subnet_azs
   fips               = var.fips
 
-  # Identity provider configuration
-  enable_identity_provider     = var.persists_through_sleep
+  # Break-glass HTPasswd (optional). Bootstrap uses module.bootstrap_admin instead (#29).
+  enable_identity_provider     = var.enable_cluster_admin && var.persists_through_sleep
   admin_username               = var.admin_username
-  admin_password_for_bootstrap = var.admin_password_override != null ? var.admin_password_override : random_password.admin_password[0].result
+  admin_password_for_bootstrap = var.enable_cluster_admin ? (var.admin_password_override != null ? var.admin_password_override : random_password.admin_password[0].result) : null
 
   # KMS keys from IAM module
   kms_key_arn      = module.iam.ebs_kms_key_arn
@@ -355,13 +355,13 @@ module "cluster_timing" {
   dependency_ids = [module.cluster.cluster_id]
 }
 
-# Admin Password Management
+# Break-glass admin password (only when enable_cluster_admin). Bootstrap uses module.bootstrap_admin (#29).
 # Generate random password if override is not provided, then pass it to the cluster module.
 # Single source of truth in AWS Secrets Manager is the cluster credentials secret
 # ({cluster_name}-credentials) created in modules/infrastructure/cluster/30-identity-provider.tf.
 # Fixes #28: previously a duplicate rosa-hcp-{cluster}-admin-password secret was also created here.
 resource "random_password" "admin_password" {
-  count = var.admin_password_override == null ? 1 : 0
+  count = var.enable_cluster_admin && var.admin_password_override == null ? 1 : 0
 
   length           = 20
   special          = true
@@ -370,14 +370,23 @@ resource "random_password" "admin_password" {
   numeric          = true
   override_special = "@#&*-_"
 
-  # Ensure password meets ROSA requirements:
-  # - 14+ characters (we use 20)
-  # - Contains uppercase letter (upper = true)
-  # - Contains symbol or number (special = true, numeric = true)
+  # ROSA HTPasswd: 14+ chars, uppercase, symbol or number
 }
 
-# Identity provider and cluster credentials secret are created in the cluster module
-# See modules/infrastructure/cluster/30-identity-provider.tf
+# Short-lived bootstrap HTPasswd admin (#29). Toggled by bootstrap scripts with -target.
+# cluster_id comes from var (set by bootstrap-admin.sh), NOT module.cluster — so
+# terraform apply -target=module.bootstrap_admin does not pull in the cluster module
+# and attempt to reconcile immutable attributes (e.g. tags) when TF_VAR_tags differs.
+module "bootstrap_admin" {
+  source = "../modules/infrastructure/bootstrap-admin"
+
+  enabled    = var.enable_bootstrap_admin_user
+  cluster_id = var.bootstrap_admin_cluster_id
+  password   = var.bootstrap_admin_password
+}
+
+# Break-glass identity provider + cluster credentials secret are created in the cluster module
+# when enable_cluster_admin is true. See modules/infrastructure/cluster/30-identity-provider.tf
 
 # Bastion Host (optional, for development/demo use only)
 # WARNING: This bastion is provided for development and demonstration purposes only.

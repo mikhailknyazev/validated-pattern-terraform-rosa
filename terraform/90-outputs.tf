@@ -59,9 +59,21 @@ output "security_group_id" {
 }
 
 output "admin_user_created" {
-  description = "Whether admin user was created"
+  description = "Whether break-glass admin identity provider was created (enable_cluster_admin)"
   value       = module.cluster.identity_provider_id != null
   sensitive   = false
+}
+
+output "bootstrap_admin_username" {
+  description = "Short-lived bootstrap HTPasswd username (null when enable_bootstrap_admin_user is false)"
+  value       = module.bootstrap_admin.username
+  sensitive   = false
+}
+
+output "bootstrap_admin_password" {
+  description = "Short-lived bootstrap HTPasswd password (null when disabled). For GitOps bootstrap, prefer BOOTSTRAP_PASSWORD from bootstrap-admin.sh create (script-generated). This output is for module/standalone use when password is TF-generated (#29)."
+  value       = module.bootstrap_admin.password
+  sensitive   = true
 }
 
 output "identity_provider_id" {

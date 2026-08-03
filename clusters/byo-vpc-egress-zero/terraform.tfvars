@@ -55,6 +55,9 @@ control_plane_log_s3_applications         = ["certified-operators-catalog", "clu
 enable_audit_logging = false
 
 # GitOps requires CodeCommit mirroring for zero egress — see docs/egress-zero-gitops.md
+# Break-glass HTPasswd admin for make cluster.<name>.login (module default is false)
+enable_cluster_admin = true
+
 enable_gitops_bootstrap = false
 gitops_git_repo_url     = null
 gitops_git_path         = null

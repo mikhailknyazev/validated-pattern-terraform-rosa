@@ -24,16 +24,16 @@ output "console_url" {
 
 # Note: kubeconfig and cluster_admin_password are not available as direct outputs
 
-# Identity Provider Outputs
+# Identity Provider Outputs (break-glass via module.break_glass_htpasswd → htpasswd-idp)
 output "identity_provider_id" {
   description = "ID of the HTPasswd identity provider (null if enable_identity_provider is false or persists_through_sleep is false)"
-  value       = length(rhcs_identity_provider.admin) > 0 ? one(rhcs_identity_provider.admin[*].id) : null
+  value       = module.break_glass_htpasswd.identity_provider_id
   sensitive   = false
 }
 
 output "identity_provider_name" {
   description = "Name of the identity provider (null if enable_identity_provider is false or persists_through_sleep is false)"
-  value       = length(rhcs_identity_provider.admin) > 0 ? one(rhcs_identity_provider.admin[*].name) : null
+  value       = module.break_glass_htpasswd.idp_name
   sensitive   = false
 }
 
@@ -156,11 +156,12 @@ output "gitops_bootstrap_acm_mode" {
 
 # GitOps Bootstrap: Shell export statements for bootstrap script env vars.
 # Makefile writes values file and sets BOOTSTRAP_VALUES_FILE; eval this for the rest.
+# CREDENTIALS_SECRET is optional (break-glass only). Bootstrap login uses bootstrap-admin outputs (#29).
 output "gitops_bootstrap_env_exports" {
   description = "Shell export statements for GitOps bootstrap script env vars. Run: eval $(terraform output -raw gitops_bootstrap_env_exports). Makefile sets BOOTSTRAP_VALUES_FILE after writing values from gitops_bootstrap_hub_values or gitops_bootstrap_spoke_values."
-  value = var.enable_gitops_bootstrap && length(aws_secretsmanager_secret.cluster_credentials) > 0 ? join("\n", compact([
+  value = var.enable_gitops_bootstrap ? join("\n", compact([
     "export CLUSTER_NAME='${var.cluster_name}'",
-    "export CREDENTIALS_SECRET='${aws_secretsmanager_secret.cluster_credentials[0].name}'",
+    length(aws_secretsmanager_secret.cluster_credentials) > 0 ? "export CREDENTIALS_SECRET='${aws_secretsmanager_secret.cluster_credentials[0].name}'" : "",
     "export AWS_REGION='${var.region}'",
     "export ACM_MODE='${var.acm_mode}'",
     "export HELM_REPO_NAME='${var.helm_repo_name}'",

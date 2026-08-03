@@ -810,21 +810,21 @@ variable "rerun_bootstrap" {
 }
 
 variable "enable_identity_provider" {
-  description = "Enable HTPasswd identity provider for admin user. If false, no identity provider will be created."
+  description = "Enable long-lived HTPasswd break-glass identity provider (root enable_cluster_admin). GitOps bootstrap uses module.bootstrap_admin instead (#29)."
   type        = bool
-  default     = true
+  default     = false
   nullable    = false
 }
 
 variable "admin_username" {
-  description = "Admin username for cluster credentials secret and identity provider (used by GitOps bootstrap). Default: 'admin'"
+  description = "Break-glass admin username for identity provider and credentials secret. Default: 'admin'"
   type        = string
   default     = "admin"
   nullable    = false
 }
 
 variable "admin_password_for_bootstrap" {
-  description = "Admin password for cluster credentials secret and identity provider (used by GitOps bootstrap). If not provided, secret will be created with placeholder that must be updated manually."
+  description = "Break-glass admin password for identity provider and credentials secret. Not used for GitOps bootstrap (#29)."
   type        = string
   default     = null
   nullable    = true

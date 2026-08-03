@@ -75,7 +75,9 @@ modules/infrastructure/
 ├── network-private/     # Private VPC
 ├── network-existing/    # Use existing VPC
 ├── iam/                 # IAM roles, OIDC, KMS, operator roles
-├── cluster/             # Cluster + identity provider + EFS + GitOps bootstrap
+├── cluster/             # Cluster + optional break-glass IDP + EFS + GitOps bootstrap
+├── htpasswd-idp/        # Shared HTPasswd IDP (bootstrap + break-glass)
+├── bootstrap-admin/     # Short-lived bootstrap admin wrapper
 └── bastion/             # Bastion host
 ```
 

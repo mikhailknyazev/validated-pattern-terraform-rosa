@@ -107,27 +107,21 @@ make cluster.byo-vpc.validate-network
 - **`destroy-infrastructure.sh`**: Destroy infrastructure (with confirmation)
 - **`cleanup-infrastructure.sh`**: Sleep infrastructure (destroy with preserved resources, auto-approve, CI/CD friendly)
 
-#### GitOps Bootstrap Script
+#### GitOps Bootstrap Scripts
 
+- **`bootstrap-admin.sh`**: Create/destroy short-lived HTPasswd bootstrap admin (used by Make bootstrap)
 - **`bootstrap-gitops.sh`**: Bootstrap GitOps operator on ROSA HCP cluster using Helm charts
 
 **Usage:**
 ```bash
-# Via Makefile (recommended)
+# Via Makefile (recommended) — creates bootstrap admin, runs GitOps, tears admin down
 make cluster.<cluster-name>.bootstrap
 
-# Directly (from terraform/): write values, export env vars, run script
-# terraform output -raw gitops_bootstrap_hub_values > clusters/<name>/cluster-bootstrap-values.yaml
-# eval $(terraform output -raw gitops_bootstrap_env_exports)
-# export BOOTSTRAP_VALUES_FILE=$PWD/clusters/<name>/cluster-bootstrap-values.yaml
-$(terraform output -raw gitops_bootstrap_script_path)
-```
-
-**Debug mode:**
-Set `DEBUG=true` to enable command tracing (`set -x`):
-```bash
+# Debug mode
 DEBUG=true make cluster.<cluster-name>.bootstrap
 ```
+
+See [cluster/README-bootstrap-gitops.md](cluster/README-bootstrap-gitops.md) for standalone usage and env vars.
 
 **Output:**
 - Creates values file at `clusters/<cluster-dir>/cluster-bootstrap-values.yaml` for inspection
@@ -136,7 +130,7 @@ DEBUG=true make cluster.<cluster-name>.bootstrap
 
 ### Utility Scripts
 
-- **`get-admin-password.sh`**: Get admin password from the cluster credentials Secrets Manager secret (`{cluster}-credentials` JSON `.password`)
+- **`get-admin-password.sh`**: Get break-glass admin password from the cluster credentials Secrets Manager secret (`cluster_credentials_secret_arn` → JSON `.password`)
 - **`get-k8s-token.sh`**: Extract Kubernetes token via `oc login` with retry logic
 - **`get-infra-outputs.sh`**: Extract infrastructure outputs and export as TF_VAR_* environment variables
 - **`check-cluster.sh`**: Validate cluster directory exists
@@ -151,8 +145,8 @@ DEBUG=true make cluster.<cluster-name>.bootstrap
 ### Info Scripts
 
 - **`show-endpoints.sh`**: Show cluster API and console URLs
-- **`show-credentials.sh`**: Show admin credentials
-- **`login.sh`**: Login to cluster via oc CLI
+- **`show-credentials.sh`**: Show break-glass admin credentials (requires `enable_cluster_admin`)
+- **`login.sh`**: `oc login` as break-glass admin (validates Terraform outputs; no `terraform init`)
 
 ## Environment Variables
 
@@ -170,7 +164,7 @@ export TF_BACKEND_CONFIG_DYNAMODB_TABLE="terraform-state-lock"  # Optional
 
 - `AUTO_APPROVE=true`: Skip confirmation prompts (used by sleep/cleanup scripts)
 - `TF_VAR_k8s_token`: Kubernetes token (if not set, script will obtain via oc login)
-- `TF_VAR_admin_password_override`: Override admin password (if secret not available)
+- `TF_VAR_admin_password_override`: Override break-glass admin password when `enable_cluster_admin = true` (IDP must exist; override alone is not enough)
 
 ## CI/CD Integration
 

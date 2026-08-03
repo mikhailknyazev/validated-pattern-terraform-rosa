@@ -66,7 +66,7 @@ Thumbs.db
 # Scratch directory for temporary files
 scratch/
 
-# Local agent / SDD scratch (not part of the product tree)
+# Local agent / Superpowers session scratch (brainstorm TUI, logs, pids). Keep docs/superpowers/ tracked.
 .superpowers/
 
 # Generated bootstrap values (Terraform output, same dir as tfvars)

@@ -8,7 +8,7 @@ This module creates and manages ROSA HCP clusters, machine pools, identity provi
 - Flexible machine pool configuration
 - Support for custom machine pools or default pool
 - Multi-AZ support
-- HTPasswd identity provider for admin user
+- Optional HTPasswd break-glass admin (`enable_identity_provider` / root `enable_cluster_admin`) via shared `htpasswd-idp` module
 - **EFS file system** (storage infrastructure that depends on cluster security groups)
 - **Control plane log forwarding** (new ROSA managed log forwarder) - supports multiple log groups to CloudWatch/S3
 - CloudWatch audit logging configuration (legacy, deprecated - IAM resources are in IAM module)
@@ -169,7 +169,7 @@ module "cluster" {
 
 ### Identity Provider
 
-The module creates an HTPasswd identity provider and admin user when `enable_identity_provider = true`. Admin credentials are stored once in AWS Secrets Manager as `{cluster_name}-credentials` (JSON: `user`, `password`, `url`) and persist through sleep. This is the single source of truth for login and GitOps bootstrap (no separate plain-password secret).
+When `enable_identity_provider = true` (root `enable_cluster_admin`), the module creates a long-lived HTPasswd break-glass admin via `modules/infrastructure/htpasswd-idp` and stores credentials once in AWS Secrets Manager as `{cluster_name}-credentials` (JSON: `user`, `password`, `url`). That secret is the single source of truth for `make login` / `show-credentials` (no separate plain-password secret; Fixes #28). GitOps bootstrap uses a separate short-lived `module.bootstrap_admin` (also `htpasswd-idp`, different IDP/user names) — both can coexist (#29). Bootstrap does not require the break-glass secret.
 
 ## Outputs
 

@@ -59,15 +59,36 @@ rosa whoami
 
 See [Account Prerequisites](../prerequisites/account.md) for OCM role and Marketplace linking.
 
-## Admin password
+## Cluster admin (break-glass) vs GitOps bootstrap
 
-Optional override for the Terraform-managed HTPasswd admin user. If unset, a random password is generated and stored in AWS Secrets Manager as `{cluster_name}-credentials` (JSON with `user`, `password`, `url`):
+Two separate HTPasswd paths share `modules/infrastructure/htpasswd-idp`:
+
+| Path | When | User / IDP | Secrets Manager | Used by |
+|------|------|------------|-----------------|---------|
+| **Bootstrap** | Only during `make cluster.<name>.bootstrap` | `bootstrap` | No | GitOps `oc login` (created then destroyed automatically) |
+| **Break-glass** | When `enable_cluster_admin = true` | `admin` | Yes (`{cluster_name}-credentials` JSON) | `make cluster.<name>.login` / `show-credentials` |
+
+**GitOps bootstrap** does not need break-glass credentials. `bootstrap-admin.sh` generates a password, creates a short-lived HTPasswd user, polls until `oc login` works, runs GitOps, then tears the user down (password is not stored in Secrets Manager).
+
+**Break-glass admin** (human / day-0 login until OIDC or similar):
+
+```hcl
+# terraform.tfvars
+enable_cluster_admin = true
+# optional: admin_password_override / TF_VAR_admin_password_override
+```
 
 ```bash
+# Optional password override (otherwise Terraform generates one)
 export TF_VAR_admin_password_override="your-secure-password-at-least-14-chars"
 ```
 
-Retrieve the password after apply:
+- Variable **default** is `false` (no long-lived HTPasswd admin).
+- Example cluster `terraform.tfvars` in this repo set `enable_cluster_admin = true` so `make cluster.<name>.login` works after apply.
+- Credentials live in a single Secrets Manager secret `{cluster_name}-credentials` (JSON: `user`, `password`, `url`) — not a separate plain-password secret.
+- Without break-glass, `make login` exits with instructions — it does not use the bootstrap user (that user is already destroyed).
+
+Retrieve the break-glass password after apply:
 
 ```bash
 aws secretsmanager get-secret-value \

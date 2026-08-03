@@ -223,11 +223,11 @@ make cluster.<cluster-name>.apply
 # Destroy cluster
 make cluster.<cluster-name>.destroy
 
-# Show endpoints and credentials
+# Show endpoints and break-glass credentials (requires enable_cluster_admin = true)
 make cluster.<cluster-name>.show-endpoints
 make cluster.<cluster-name>.show-credentials
 
-# Login to cluster
+# Login as break-glass admin (examples set enable_cluster_admin = true)
 make cluster.<cluster-name>.login
 
 # Tunnel management (egress-zero clusters only)

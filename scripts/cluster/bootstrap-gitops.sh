@@ -72,7 +72,6 @@ trap 'handle_error' ERR
 validate_env_vars() {
 	local required_vars=(
 		"CLUSTER_NAME"
-		"CREDENTIALS_SECRET"
 		"AWS_REGION"
 		"BOOTSTRAP_VALUES_FILE"
 	)
@@ -86,6 +85,15 @@ validate_env_vars() {
 
 	if [[ ${#missing_vars[@]} -gt 0 ]]; then
 		bad_exit "Missing required environment variables: ${missing_vars[*]}"
+	fi
+
+	# Login credentials required when installing (ENABLE=true). Cleanup may only need hub secret for spoke.
+	if [[ "${ENABLE:-true}" == "true" ]]; then
+		if [[ -z "${BOOTSTRAP_USERNAME:-}" || -z "${BOOTSTRAP_PASSWORD:-}" || -z "${CLUSTER_API_URL:-}" ]]; then
+			if [[ -z "${CREDENTIALS_SECRET:-}" ]]; then
+				bad_exit "Set BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD, and CLUSTER_API_URL (from bootstrap-admin), or CREDENTIALS_SECRET for Secrets Manager login."
+			fi
+		fi
 	fi
 
 	# Validate values file exists
@@ -134,7 +142,7 @@ check_api_server_ready() {
 				echo "WARNING: API server check timed out after ${max_attempts} attempts (${max_attempts} × ${sleep_time}s = $((max_attempts * sleep_time))s total), but continuing with login attempt..."
 				return 1
 			fi
-			((i++))
+			i=$((i + 1))
 			sleep "${sleep_time}"
 		fi
 	done
@@ -165,79 +173,88 @@ wait_for_worker_nodes() {
 		if [[ $i -ge $max_attempts ]]; then
 			bad_exit "Timed out waiting for ${min_workers} Ready worker node(s) after ${max_attempts} attempts ($((max_attempts * sleep_time))s total). Last count: ${ready_count}."
 		fi
-		((i++))
+		i=$((i + 1))
 		sleep "${sleep_time}"
 	done
 }
 
-# --- Log into cluster function ---
-log_into_cluster() {
-	local credentials="${1}"
-	local region="${2:-${AWS_REGION}}"
-	local max_attempts="${3:-10}" # Increased from 5 to 10
-	local sleep_time="${4:-30}"
+# --- Poll oc login until IDP/user works (HTPasswd can take minutes to propagate) ---
+# Env overrides: BOOTSTRAP_LOGIN_MAX_ATTEMPTS (default 30), BOOTSTRAP_LOGIN_SLEEP (default 20)
+poll_oc_login() {
+	local url="$1"
+	local user="$2"
+	local pw="$3"
+	local max_attempts="${4:-${BOOTSTRAP_LOGIN_MAX_ATTEMPTS:-30}}"
+	local sleep_time="${5:-${BOOTSTRAP_LOGIN_SLEEP:-20}}"
 
-	echo "Retrieving cluster credentials from AWS Secrets Manager (region: ${region})..."
-
-	# Use jq to directly extract values
-	local secret_string
-	secret_string=$(aws secretsmanager get-secret-value \
-		--secret-id "${credentials}" \
-		--region "${region}" \
-		--query SecretString \
-		--output text)
-
-	# Extract credentials using jq
-	local url pw user
-	url=$(echo "${secret_string}" | jq -r ".url")
-	pw=$(echo "${secret_string}" | jq -r ".password")
-	user=$(echo "${secret_string}" | jq -r ".user")
-
-	if [[ -z "${url}" || "${url}" == "null" ]] ||
-		[[ -z "${pw}" || "${pw}" == "null" ]] ||
-		[[ -z "${user}" || "${user}" == "null" ]]; then
-		bad_exit "Failed to extract credentials from secret ${credentials}"
-	fi
-
-	echo "Successfully retrieved AWS secret."
-
-	# Set NO_PROXY variable for ROSA HCP
-	export NO_PROXY="${NO_PROXY:-},.p3.openshiftapps.com"
-
-	# Check if API server is ready before attempting login
 	echo "Waiting for API server to be ready before attempting login..."
-	check_api_server_ready "${url}" 20 15 # 20 attempts, 15 seconds each = 5 minutes max
+	check_api_server_ready "${url}" 20 15
 
-	# Log into cluster with retry logic
-	echo "Attempting cluster login to ${url}..."
+	echo "Polling cluster login as ${user} at ${url} (max ${max_attempts} attempts, ${sleep_time}s apart)..."
 	local i=1
-	local login_result=""
-
+	local login_result=0
 	while [[ $i -le $max_attempts ]]; do
-		if oc login "${url}" \
+		# Use `cmd || login_result=$?` so a failed login does not fire the ERR trap.
+		# macOS /bin/bash 3.2 still runs ERR under `set +e`; `||` is suppressed on all bash versions.
+		login_result=0
+		oc login "${url}" \
 			--username "${user}" \
 			--password "${pw}" \
-			--insecure-skip-tls-verify &>/dev/null; then
-			echo "Logged in to OpenShift cluster successfully."
-			break
-		else
-			login_result=$?
-			echo "Cluster login attempt ${i}/${max_attempts} failed (exit code: ${login_result}). Sleeping ${sleep_time} seconds..."
-
-			if [[ $i -ge $max_attempts ]]; then
-				bad_exit "Failed to log in to cluster after ${max_attempts} attempts."
-			fi
-			((i++))
-			sleep "${sleep_time}"
+			--insecure-skip-tls-verify &>/dev/null || login_result=$?
+		if [[ $login_result -eq 0 ]]; then
+			echo "Logged in to OpenShift cluster successfully (attempt ${i}/${max_attempts})."
+			return 0
 		fi
+		echo "Cluster login attempt ${i}/${max_attempts} failed (exit code: ${login_result}). Sleeping ${sleep_time} seconds (IDP may still be propagating)..."
+		if [[ $i -ge $max_attempts ]]; then
+			bad_exit "Failed to log in to cluster after ${max_attempts} attempts (~$((max_attempts * sleep_time))s). IDP/user may not be ready."
+		fi
+		i=$((i + 1))
+		sleep "${sleep_time}"
 	done
+}
 
-	# Extract domain from URL for Helm charts
+# --- Log into cluster: prefer bootstrap-admin env, else Secrets Manager ---
+log_into_cluster() {
+	local credentials="${1:-}"
+	local region="${2:-${AWS_REGION}}"
+	local url pw user
+
+	export NO_PROXY="${NO_PROXY:-},.p3.openshiftapps.com"
+
+	# If a secret name is passed (e.g. hub credentials), always use Secrets Manager.
+	# Otherwise use short-lived bootstrap-admin env vars (#29).
+	if [[ -n "${credentials}" ]]; then
+		echo "Retrieving cluster credentials from AWS Secrets Manager (region: ${region}, secret: ${credentials})..."
+		local secret_string
+		secret_string=$(aws secretsmanager get-secret-value \
+			--secret-id "${credentials}" \
+			--region "${region}" \
+			--query SecretString \
+			--output text)
+		url=$(echo "${secret_string}" | jq -r ".url")
+		pw=$(echo "${secret_string}" | jq -r ".password")
+		user=$(echo "${secret_string}" | jq -r ".user")
+		if [[ -z "${url}" || "${url}" == "null" ]] ||
+			[[ -z "${pw}" || "${pw}" == "null" ]] ||
+			[[ -z "${user}" || "${user}" == "null" ]]; then
+			bad_exit "Failed to extract credentials from secret ${credentials}"
+		fi
+		echo "Successfully retrieved AWS secret."
+	elif [[ -n "${BOOTSTRAP_USERNAME:-}" && -n "${BOOTSTRAP_PASSWORD:-}" && -n "${CLUSTER_API_URL:-}" ]]; then
+		echo "Using short-lived bootstrap-admin credentials from environment..."
+		url="${CLUSTER_API_URL}"
+		user="${BOOTSTRAP_USERNAME}"
+		pw="${BOOTSTRAP_PASSWORD}"
+	else
+		bad_exit "No login credentials: pass a Secrets Manager secret name, or set BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD, and CLUSTER_API_URL."
+	fi
+
+	poll_oc_login "${url}" "${user}" "${pw}"
+
 	local domain
 	domain=$(echo "${url}" | awk -F'.' '{print $2"."$3"."$4"."$5"."$6}' | awk -F':' '{print $1}')
 	echo "Cluster domain: ${domain}"
-
-	# Export domain for use in other functions
 	export CLUSTER_DOMAIN="${domain}"
 
 	# Extra sleep as the API can be jumpy after initial login post build
@@ -358,7 +375,7 @@ install_gitops_hub() {
 				echo "Waiting for cluster-gitops ArgoCD instance... (attempt ${attempt}/${max_attempts})"
 				sleep 5
 			fi
-			((attempt++))
+			attempt=$((attempt + 1))
 		fi
 	done
 
@@ -376,7 +393,7 @@ install_gitops_hub() {
 				echo "Waiting for application-gitops ArgoCD instance... (attempt ${attempt}/${max_attempts})"
 				sleep 5
 			fi
-			((attempt++))
+			attempt=$((attempt + 1))
 		fi
 	done
 
@@ -476,7 +493,7 @@ install_gitops_spoke() {
 				echo "Waiting for application-gitops ArgoCD instance... (attempt ${attempt}/${max_attempts})"
 				sleep 5
 			fi
-			((attempt++))
+			attempt=$((attempt + 1))
 		fi
 	done
 
@@ -546,8 +563,8 @@ install_gitops_spoke() {
 	# STEP 3: Apply ACM import manifests to spoke
 	echo "=== STEP 3: Applying ACM import manifests to spoke ==="
 
-	# Log back into spoke cluster
-	log_into_cluster "${CREDENTIALS_SECRET}" "${AWS_REGION}"
+	# Log back into spoke cluster (bootstrap-admin env if no break-glass secret)
+	log_into_cluster "${CREDENTIALS_SECRET:-}" "${AWS_REGION}"
 
 	# Check if CRDs are already applied (idempotency)
 	if oc get crd klusterlets.operator.open-cluster-management.io &>/dev/null; then
@@ -792,8 +809,8 @@ main() {
 		good_exit "Bootstrap script cleanup completed."
 	fi
 
-	# Log into cluster
-	log_into_cluster "${CREDENTIALS_SECRET}" "${AWS_REGION}"
+	# Primary cluster login: bootstrap-admin env (no secret arg). Hub/spoke paths pass a secret name explicitly.
+	log_into_cluster "" "${AWS_REGION}"
 
 	# Worker nodes must exist before Helm pre-install hooks run (installplan-approver Job)
 	wait_for_worker_nodes

@@ -19,11 +19,16 @@ export RHCS_TOKEN="your-offline-token"
 # Or for CI/CD:
 # export RHCS_CLIENT_ID="..."
 # export RHCS_CLIENT_SECRET="..."
-
-export TF_VAR_admin_password="your-secure-password"  # optional
 ```
 
-See [Authentication](authentication.md) for details.
+Example clusters set `enable_cluster_admin = true` so a break-glass HTPasswd admin is created for `make login`. Override the generated password only if needed:
+
+```bash
+# optional
+export TF_VAR_admin_password_override="your-secure-password"
+```
+
+See [Authentication](authentication.md) for break-glass vs bootstrap login.
 
 ## 2. Validate prerequisites (recommended)
 
@@ -47,20 +52,22 @@ Or use scripts directly (CI/CD friendly):
 ./scripts/cluster/apply-infrastructure.sh public
 ```
 
-## 4. Access the cluster
+## 4. Bootstrap GitOps
+
+After the cluster reaches **Ready**. Bootstrap creates its own short-lived HTPasswd user, then tears it down — it does not use the break-glass admin:
+
+```bash
+make cluster.public.bootstrap
+```
+
+## 5. Access the cluster (break-glass)
+
+Requires `enable_cluster_admin = true` (already set in example tfvars):
 
 ```bash
 make cluster.public.show-endpoints
 make cluster.public.login
 make cluster.public.show-credentials
-```
-
-## 5. Bootstrap GitOps
-
-After the cluster reaches **Ready**:
-
-```bash
-make cluster.public.bootstrap
 ```
 
 ## Other cluster profiles

@@ -224,8 +224,8 @@ flowchart LR
 - Never commit secrets to Git
 - **Production and CI/CD:** use service account `RHCS_CLIENT_ID` + `RHCS_CLIENT_SECRET` — not personal `RHCS_TOKEN`
 - Store credentials in `.rhcs_creds` (gitignored) or CI secrets; rotate service account secrets per your security policy
-- Cluster admin password: `TF_VAR_admin_password` or AWS Secrets Manager
-- Cluster credentials for bootstrap: stored in Secrets Manager by Terraform; bootstrap script reads them automatically
+- **Break-glass cluster admin** (optional, `enable_cluster_admin`): long-lived HTPasswd `admin` in AWS Secrets Manager for `make cluster.<name>.login`. Variable default is `false`; example tfvars set `true`. Optional override: `TF_VAR_admin_password_override`
+- **GitOps bootstrap login**: short-lived HTPasswd `bootstrap` user created/destroyed by `make cluster.<name>.bootstrap` — not stored in Secrets Manager and not used for day-2 login. See [Authentication](../getting-started/authentication.md)
 
 ---
 
@@ -530,7 +530,11 @@ flowchart LR
 # OCM service account credentials (recommended)
 export RHCS_CLIENT_ID="your-client-id-uuid"
 export RHCS_CLIENT_SECRET="your-client-secret"
-export TF_VAR_admin_password="your-secure-password"
+# Optional break-glass password override (otherwise Terraform generates one when enable_cluster_admin=true):
+# export TF_VAR_admin_password_override="your-secure-password"
+
+# In clusters/acme-dev/terraform.tfvars (example recipes already set this):
+#   enable_cluster_admin = true
 
 # Infrastructure
 make cluster.acme-dev.init
@@ -541,8 +545,11 @@ make cluster.acme-dev.apply
 # 1. Add notification contact emails on cluster Support tab
 # 2. Add platform team users to User Access group with OCM roles
 
-# GitOps bootstrap
+# GitOps bootstrap (uses short-lived bootstrap HTPasswd; tears it down afterward)
 make cluster.acme-dev.bootstrap
+
+# Day-2 oc login (break-glass admin from Secrets Manager)
+make cluster.acme-dev.login
 
 # Validation
 make cluster.acme-dev.verify
@@ -594,6 +601,7 @@ flowchart TB
 | Compute model | `enable_autonode`, `default_*_replicas`, `additional_machine_pools` | [autonode](../../clusters/autonode/terraform.tfvars), [public](../../clusters/public/terraform.tfvars) |
 | Fleet / ACM | `acm_mode`, hub/spoke bootstrap targets | [dev-hub-1](../../clusters/dev-hub-1/terraform.tfvars), [dev-spoke-1](../../clusters/dev-spoke-1/terraform.tfvars) |
 | GitOps | `enable_gitops_bootstrap`, `gitops_git_repo_url`, `gitops_git_path` | Any example with GitOps enabled |
+| Day-0 / break-glass login | `enable_cluster_admin` (default `false`; examples set `true`) | All example tfvars; see [Authentication](../getting-started/authentication.md) |
 | Production hardening | `openshift_version`, KMS, `fips`, `enable_termination_protection` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) |
 
 #### Worked example: BYO VPC + egress-zero + AutoNode
@@ -618,11 +626,12 @@ enable_autonode = true
 openshift_version = "4.19.30"  # AutoNode version/region constraints — verify current docs
 region            = "us-east-1"
 
-# --- Your org: GitOps and naming ---
+# --- Your org: GitOps, naming, day-0 login ---
 cluster_name          = "acme-prod-01"
 gitops_git_repo_url   = "https://github.com/<org>/acme-cluster-config.git"
 gitops_git_path       = "prod/acme-prod-01"
 enable_gitops_bootstrap = true
+enable_cluster_admin   = true  # break-glass for make login until customer IdP exists
 ```
 
 **Operational steps** for this combination:
@@ -916,6 +925,7 @@ These improvements are documented as future work:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
+| `enable_cluster_admin` | Long-lived break-glass HTPasswd admin + Secrets Manager (default `false`; examples set `true`) | `true` |
 | `enable_gitops_bootstrap` | Enable bootstrap outputs and script | `true` |
 | `gitops_git_repo_url` | cluster-config repository URL | `https://github.com/<org>/acme-cluster-config.git` |
 | `gitops_git_path` | Path under repo root | `dev/acme-dev` |
@@ -948,6 +958,8 @@ From [terraform/90-outputs.tf](../../terraform/90-outputs.tf):
 | `gitops_bootstrap_spoke_values` | YAML for spoke bootstrap |
 | `gitops_bootstrap_env_exports` | Shell `export` statements for bootstrap |
 | `gitops_bootstrap_script_path` | Path to `bootstrap-gitops.sh` |
+| `admin_user_created` | Whether break-glass HTPasswd admin IDP exists |
+| `cluster_credentials_secret_arn` | Secrets Manager ARN for break-glass credentials JSON (null if disabled) |
 | `cluster_domain` | Cluster domain for Helm values |
 
 ### C. Makefile quick reference
@@ -960,9 +972,9 @@ make cluster.<name>.bootstrap         # Bootstrap GitOps (hub/standalone)
 make cluster.<name>.bootstrap-spoke   # Bootstrap as ACM spoke
 make cluster.<name>.teardown-spoke      # Remove spoke from ACM hub
 make cluster.<name>.verify            # Verify GitOps deployment
-make cluster.<name>.login             # oc login
+make cluster.<name>.login             # oc login (requires enable_cluster_admin)
 make cluster.<name>.show-endpoints      # API and console URLs
-make cluster.<name>.show-credentials    # Admin credentials
+make cluster.<name>.show-credentials    # Break-glass admin credentials (if enabled)
 make cluster.<name>.destroy             # Destroy all resources
 make cluster.<name>.sleep               # Sleep cluster (preserve DNS/IAM)
 make cluster.<name>.vpn-start           # Start Client VPN (private clusters)
@@ -981,6 +993,8 @@ make cluster.<name>.vpn-start           # Start Client VPN (private clusters)
 ### E. Related documentation
 
 - [README.md](../../README.md) — Project overview and quick start
+- [Authentication](../getting-started/authentication.md) — Break-glass vs short-lived bootstrap login
+- [Quick Start](../getting-started/quick-start.md) — First public cluster walkthrough
 - [PLAN.md](../../PLAN.md) — Architecture decisions and implementation plan
 - [clusters/README.md](../../clusters/README.md) — Cluster directory patterns
 - [scripts/cluster/README-bootstrap-gitops.md](../../scripts/cluster/README-bootstrap-gitops.md) — Bootstrap script reference

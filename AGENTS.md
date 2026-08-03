@@ -573,6 +573,30 @@ terraform show -no-color clusters/egress-zero/terraform.tfplan | grep -E "worker
 - Document all inputs, outputs, and usage examples
 - Include architecture diagrams if helpful
 
+### Feature Changes → Documentation & Enablement Review
+
+**MANDATORY**: When implementing feature changes (new variables/modules, behavior changes, new Make/script flows, breaking defaults, auth/login/bootstrap paths, etc.), **evaluate impact on documentation and enablement materials** and update them where helpful or necessary.
+
+Do **not** treat docs as optional follow-up. Before considering the work done, scan and update (as applicable):
+
+| Material | Path / examples | Update when… |
+|----------|-----------------|--------------|
+| Getting started | `docs/getting-started/` (quick-start, authentication, …) | Operator workflow, credentials, or defaults change |
+| Enablement guide | `docs/deployment/enablement.md` | End-to-end deploy/bootstrap/login, tfvars recipes, credential hygiene |
+| CI/CD | `docs/CI_CD.md` / `docs/guides/ci-cd.md` | Env vars, pipeline secrets, script contracts |
+| Scripts docs | `scripts/README.md`, `scripts/**/README*.md` | Script usage, required env vars, Make targets |
+| Module / cluster docs | `modules/**/README.md`, `clusters/README.md` | Module interface or example cluster patterns |
+| Project overview | `README.md`, `PLAN.md` | Architecture, module layout, operator-facing summary |
+| Changelog | `CHANGELOG.md` | User-visible behavior (delta for this PR/commit only) |
+
+**Evaluation checklist** (for each feature change):
+1. **Who is affected?** Operators following enablement/quick-start, CI, or script-direct usage?
+2. **What became wrong or incomplete?** Old variable names, defaults, login/bootstrap assumptions, Make targets, secrets locations?
+3. **Update where necessary** — fix incorrect guidance; add brief notes where the new path is non-obvious
+4. **Skip only when truly N/A** — pure refactors with no operator-facing change; note that in the PR if helpful
+
+**Best Practice**: If you changed how someone deploys, bootstraps, logs in, or configures a cluster, the enablement guide and getting-started docs are almost always in scope.
+
 ## Versioning and Changelog
 
 ### Semantic Versioning
@@ -1259,6 +1283,7 @@ When writing new Terraform code, ensure:
 - [ ] **PLAN.md reviewed** - Changes align with project plan
 - [ ] **PLAN.md updated** - If architecture changed, update the plan
 - [ ] **CHANGELOG.md updated** - Document only changes since last commit (delta for this PR/commit); no duplicate entries or section headers
+- [ ] **Docs / enablement reviewed** - Feature impact evaluated against `docs/`, enablement, scripts docs, README; updated where helpful or necessary (see Feature Changes → Documentation & Enablement Review)
 - [ ] File uses numeric prefix (00-99) for execution order
 - [ ] File name uses lowercase with underscores
 - [ ] Provider versions are pinned
@@ -1273,7 +1298,7 @@ When writing new Terraform code, ensure:
 - [ ] Validation blocks added where appropriate
 - [ ] Comments added for complex logic or non-obvious decisions
 - [ ] Module README.md created/updated (if creating/updating a module)
-- [ ] Documentation updated for any new features or changes
+- [ ] Documentation / enablement updated for operator-facing feature changes (not only module README)
 - [ ] **Code quality checks passed** - **MANDATORY**: Run `make test` after modifying files (see Code Quality Checks section)
 
 When writing new shell scripts, ensure:
@@ -1298,7 +1323,7 @@ Before committing code, ensure:
 9. [ ] Code follows PLAN.md specifications
 10. [ ] PLAN.md updated if architecture changed
 11. [ ] CHANGELOG.md updated with changes since last commit only (see Versioning and Changelog — delta-based workflow)
-12. [ ] All documentation updated (README.md, module docs)
+12. [ ] Docs / enablement reviewed and updated where helpful or necessary (getting-started, enablement, CI/CD, scripts docs, README — see Feature Changes → Documentation & Enablement Review)
 13. [ ] **Code quality checks passed** - **MANDATORY**: Run `make test` after modifying Terraform or shell script files (see Code Quality Checks section)
     - [ ] Terraform files formatted: `make tf-fmt-check` passes
     - [ ] Terraform files validated: `make tf-validate` passes

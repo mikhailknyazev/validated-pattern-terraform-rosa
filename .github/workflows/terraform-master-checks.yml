@@ -82,7 +82,10 @@ jobs:
       matrix:
         module:
           - bastion
+          - bootstrap-admin
+          - client-vpn
           - cluster
+          - htpasswd-idp
           - iam
           - network-existing
           - network-private

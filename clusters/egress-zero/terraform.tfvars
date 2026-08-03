@@ -114,6 +114,9 @@ control_plane_log_s3_retention_days         = 30
 enable_audit_logging = false # Disable legacy audit logging in favor of new control plane log forwarding
 
 # GitOps Bootstrap
+# Break-glass HTPasswd admin for make cluster.<name>.login (module default is false)
+enable_cluster_admin = true
+
 enable_gitops_bootstrap = true # Enable GitOps operator installation after cluster creation
 gitops_git_repo_url     = "https://github.com/rh-mobb/rosa-cluster-config.git"
 gitops_git_path         = "dev/pczarkow" # Path to cluster configuration directory in Git repo

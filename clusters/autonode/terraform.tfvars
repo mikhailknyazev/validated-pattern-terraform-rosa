@@ -26,6 +26,9 @@ additional_machine_pools = {}
 
 persists_through_sleep = true
 
+# Break-glass HTPasswd admin for make cluster.<name>.login (module default is false)
+enable_cluster_admin = true
+
 enable_gitops_bootstrap      = true
 gitops_git_repo_url          = "https://github.com/rh-mobb/rosa-cluster-config.git"
 gitops_git_path              = "dev/autonode"

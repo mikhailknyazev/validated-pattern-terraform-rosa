@@ -97,6 +97,9 @@ enable_bastion    = false
 bastion_public_ip = false
 
 # GitOps Bootstrap
+# Break-glass HTPasswd admin for make cluster.<name>.login (module default is false)
+enable_cluster_admin = true
+
 enable_gitops_bootstrap = false
 gitops_git_repo_url     = null
 gitops_git_path         = null

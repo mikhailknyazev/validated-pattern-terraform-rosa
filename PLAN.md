@@ -22,6 +22,8 @@ rosa-hcp-infrastructure/
 │       ├── network-existing/    # DEPRECATED - use network_type="existing" instead
 │       ├── iam/                # IAM & OIDC module
 │       ├── cluster/            # ROSA HCP Cluster module (includes identity provider, storage, GitOps bootstrap)
+│       ├── htpasswd-idp/       # Shared HTPasswd IDP + group membership (bootstrap + break-glass)
+│       ├── bootstrap-admin/    # Short-lived bootstrap admin wrapper around htpasswd-idp (#29)
 │       ├── bastion/            # Bastion host for private cluster access (fallback to sshuttle)
 │       └── client-vpn/        # AWS Client VPN for private cluster access (recommended)
 ├── terraform/                  # Unified Terraform configuration (shared across clusters)
@@ -891,6 +893,12 @@ Different security postures require different network topologies:
 - IAM resources can be shared or reused across clusters
 - Clear separation of concerns
 - Easier to audit permissions
+
+### Why Short-Lived Bootstrap HTPasswd (#29)?
+- GitOps bootstrap only needs `oc login` for the bootstrap run; a long-lived admin password in Secrets Manager/state is unnecessary exposure
+- `module.bootstrap_admin` is toggled by bootstrap via `terraform apply -target` (`enable_bootstrap_admin_user` true → false)
+- Optional `enable_cluster_admin` (default false) provides customer break-glass HTPasswd + Secrets Manager, unused by bootstrap; example cluster tfvars set it true for day-0 `make login`
+- Spec: `docs/superpowers/specs/2026-07-29-dynamic-bootstrap-htpasswd-design.md`
 
 ### Why Module-Based Approach?
 - **Reusability**: Same modules for multiple clusters

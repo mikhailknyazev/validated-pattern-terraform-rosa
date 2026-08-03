@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Dynamic bootstrap HTPasswd admin (#29)**: New `modules/infrastructure/bootstrap-admin` module and `enable_bootstrap_admin_user` (default false). `make cluster.<name>.bootstrap` generates a password in `bootstrap-admin.sh`, targeted-applies the module (`bootstrap_admin_cluster_id` + optional `bootstrap_admin_password`; null password → module `random_password`), polls `oc login` until the IDP is ready, then tears it down. Spec: `docs/superpowers/specs/2026-07-29-dynamic-bootstrap-htpasswd-design.md`.
+- **Optional break-glass cluster admin (`enable_cluster_admin`, default false)**: Long-lived HTPasswd admin + Secrets Manager credentials when enabled; not used by GitOps bootstrap. Example cluster `terraform.tfvars` set `enable_cluster_admin = true` so `make login` works until a customer IdP is configured.
+- **Shared `modules/infrastructure/htpasswd-idp` (#29)**: Reusable HTPasswd IDP + group membership used by bootstrap-admin and cluster break-glass (independent instances; both can coexist).
+
+### Changed
+- **BREAKING — identity defaults (#29)**: Cluster HTPasswd / credentials secret are no longer created by default. Set `enable_cluster_admin = true` for a persistent break-glass admin. Bootstrap no longer requires `CREDENTIALS_SECRET` for the primary cluster login.
+- **Cluster break-glass IDP via shared module (#29)**: `30-identity-provider.tf` calls `htpasswd-idp`; break-glass credentials use the single `{cluster_name}-credentials` JSON secret (#28), gated by `enable_cluster_admin` (no duplicate root plain-password secret); `moved` blocks preserve existing break-glass IDP state.
+
 ### Removed
 - **Argo CD Vault Plugin IRSA trust (#43)**: Secrets Manager IAM role trusts only External Secrets Operator (`external-secrets-operator:external-secrets-sa`) after AVP removal from the IRSA trust policy.
 
 ### Fixed
+- **Ignore `.superpowers/`**: Local Superpowers brainstorm session state is gitignored; keep `docs/superpowers/` tracked.
+- **Bootstrap login poll aborted on first failure (macOS bash 3.2)**: `poll_oc_login` used `set +e` around `oc login`, but Bash 3.2 still fires the script `ERR` trap, so the first HTPasswd propagation miss aborted bootstrap instead of retrying. Capture failure with `oc login ... || login_result=$?` (#29).
+- **`make cluster.<name>.login` no longer runs terraform init**: Validates `.terraform` and `api_url` output instead of re-initializing on every login.
+- **`make cluster.<name>.login` checks break-glass outputs first**: If `admin_user_created` is false, exits with instructions to set `enable_cluster_admin = true` instead of attempting `oc login` (uses `cluster_credentials_secret_arn`).
+- **Docs updated for bootstrap vs break-glass identity**: Enablement, quick-start, authentication, CI/CD, scripts README, and bootstrap-gitops README document short-lived bootstrap HTPasswd, opt-in `enable_cluster_admin` (examples set `true`), and `TF_VAR_admin_password_override`.
 - **Default machine pool version pinning**: Added `version` and `upgrade_acknowledgements_for` attributes to `rhcs_hcp_machine_pool.default` resource. Previously the default machine pool's OpenShift version was unmanaged by Terraform, preventing explicit version control and minor version upgrade orchestration. The `upgrade_acknowledgements_for` variable is passed from root module through to the cluster module.
 - **Separate default machine pool version variable**: Added `default_machine_pool_version` variable (default null) so the default machine pool version is managed independently from the control plane `openshift_version`. This enables staged upgrades: upgrade the control plane first, wait for completion, then set the worker version.
 - **IAM role name 64-character limit**: Applied `substr(..., 0, 64)` to all custom IAM role names and string-literal role references, matching the upstream RHCS module pattern. Also fixed two string references in `12-storage-iam.tf` that used `var.cluster_name` instead of the correct prefix locals, and corrected the `operator_role_arns` output to use actual upstream naming conventions.

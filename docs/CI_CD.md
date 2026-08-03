@@ -368,7 +368,7 @@ Set these before running scripts. This project does not manage credentials.
 
 ### Other Variables
 
-- `TF_VAR_admin_password`: Admin password (optional, can be generated)
+- `TF_VAR_admin_password_override`: Optional break-glass admin password when `enable_cluster_admin = true` (otherwise Terraform generates one). GitOps bootstrap uses a separate short-lived HTPasswd user and does not need this.
 
 ### Backend Configuration
 
@@ -464,7 +464,7 @@ Scripts use `set -euo pipefail` for strict error handling. Ensure your pipeline:
 Store sensitive values in CI/CD secrets:
 
 - **RHCS auth** (choose one): `RHCS_TOKEN` OR (`RHCS_CLIENT_ID` + `RHCS_CLIENT_SECRET`)
-- `TF_VAR_admin_password`: Admin password
+- `TF_VAR_admin_password_override`: Optional break-glass password (`enable_cluster_admin = true` in tfvars)
 - AWS credentials: Access key ID and secret access key
 
 Never commit secrets to version control.
