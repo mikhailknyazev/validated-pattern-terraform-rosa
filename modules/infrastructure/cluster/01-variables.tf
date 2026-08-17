@@ -654,6 +654,27 @@ variable "helm_chart_version" {
   nullable    = false
 }
 
+variable "app_of_apps_infrastructure_chart_version" {
+  description = "Helm chart version for app-of-apps-infrastructure (cluster-config Argo Application targetRevision in hub bootstrap values)"
+  type        = string
+  default     = "0.3.0"
+  nullable    = false
+}
+
+variable "app_of_apps_application_chart_version" {
+  description = "Helm chart version for app-of-apps-application (application-ns Argo Application targetRevision when acm_mode is not hub)"
+  type        = string
+  default     = "1.5.8"
+  nullable    = false
+}
+
+variable "app_of_apps_acm_team_onboarding_chart_version" {
+  description = "Helm chart version for app-of-apps-acm-team-onboarding (application-ns Argo Application targetRevision when acm_mode is hub)"
+  type        = string
+  default     = "0.4.1"
+  nullable    = false
+}
+
 variable "gitops_csv" {
   description = "Cluster Service Version (CSV) for the GitOps operator"
   type        = string

@@ -1,4 +1,6 @@
 .PHONY: help init plan apply destroy test clean
+.PHONY: dev.public dev.public.preflight dev.public.render dev.public.apply-local dev.public.verify dev.public.login
+.PHONY: dev.private dev.private.preflight dev.private.sync dev.private.sync-config dev.private.sync-charts
 .PHONY: init-all plan-all install-provider
 .PHONY: fmt fmt-check validate lint lint-fix docs-venv docs-preview docs-serve docs-build
 .PHONY: tf-fmt tf-fmt-check tf-validate tf-validate-modules tf-validate-root
@@ -100,6 +102,18 @@ help: ## Show this help message
 	@echo "  make sh-fmt-check         Check shell script formatting (does not modify)"
 	@echo "  make sh-lint              Lint all shell scripts with ShellCheck"
 	@echo "  make sh-lint-fix          Show ShellCheck issues (interactive fix)"
+	@echo ""
+	@echo "$(GREEN)Local multi-repo dev (Gitea + Argo — see docs/guides/local-multi-repo-dev.md):$(NC)"
+	@echo "  make cluster.<profile>.bootstrap-private   Bootstrap with in-cluster Gitea"
+	@echo "  make dev.private.preflight                 Check Gitea env and reference clones"
+	@echo "  make dev.private.sync                      Push cluster-config + charts to Gitea"
+	@echo "  make dev.private.sync-config               Push reference/rosa-cluster-config only"
+	@echo "  make dev.private.sync-charts               Upload Helm charts to Gitea registry"
+	@echo ""
+	@echo "$(GREEN)Optional escape hatch (no Gitea/Argo — single-chart speed):$(NC)"
+	@echo "  make cluster.<profile>.bootstrap-skip-gitops  Platform metadata only"
+	@echo "  make dev.public.apply-local                   helm from local chart dirs"
+	@echo "  make dev.public.render|verify|preflight       See scripts/dev/public-local-loop.sh"
 	@echo ""
 	@echo "$(GREEN)Utilities:$(NC)"
 	@echo "  make clean                Clean Terraform files"
@@ -293,6 +307,61 @@ docs-serve: docs-preview ## Alias for docs-preview
 docs-build: docs-venv ## Build documentation site (strict link checking)
 	@$(DOCS_MKDOCS) build --strict
 	@echo "$(GREEN)✓ Documentation built successfully$(NC)"
+
+# Local multi-repo development (see docs/guides/local-multi-repo-dev.md)
+DEV_PUBLIC_SCRIPT := scripts/dev/public-local-loop.sh
+
+dev.public: ## Optional escape hatch: preflight for apply-local (see docs/guides/local-multi-repo-dev.md)
+	@chmod +x "$(DEV_PUBLIC_SCRIPT)"
+	@$(DEV_PUBLIC_SCRIPT) preflight
+	@echo ""
+	@echo "$(BLUE)Optional escape hatch (no Gitea/Argo). Primary loop: make dev.private.sync$(NC)"
+	@$(DEV_PUBLIC_SCRIPT) help
+
+dev.public.preflight: ## Check reference clones, tools, and infrastructure.yaml
+	@chmod +x "$(DEV_PUBLIC_SCRIPT)"
+	@$(DEV_PUBLIC_SCRIPT) preflight
+
+dev.public.render: ## Render infrastructure charts from local reference clones
+	@chmod +x "$(DEV_PUBLIC_SCRIPT)"
+	@$(DEV_PUBLIC_SCRIPT) render
+
+dev.public.apply-local: ## Install infrastructure charts locally (no Argo sync)
+	@chmod +x "$(DEV_PUBLIC_SCRIPT)"
+	@$(DEV_PUBLIC_SCRIPT) apply-local
+
+dev.public.verify: ## Verify platform metadata and optional ESO readiness
+	@chmod +x "$(DEV_PUBLIC_SCRIPT)"
+	@$(DEV_PUBLIC_SCRIPT) verify
+
+dev.public.login: ## Login to public cluster for local dev loop
+	@$(MAKE) -f Makefile.cluster CLUSTER_NAME=public login
+
+# Private GitOps sync (in-cluster Gitea) — see docs/guides/local-multi-repo-dev.md
+DEV_PRIVATE_SYNC := scripts/dev/private-sync.sh
+DEV_CLUSTER_NAME ?= public
+
+dev.private: ## Show private GitOps sync help (primary local dev loop)
+	@chmod +x "$(DEV_PRIVATE_SYNC)"
+	@$(DEV_PRIVATE_SYNC) preflight
+	@echo ""
+	@$(DEV_PRIVATE_SYNC) help
+
+dev.private.preflight: ## Check Gitea credentials and reference clones
+	@chmod +x "$(DEV_PRIVATE_SYNC)"
+	@DEV_CLUSTER_NAME=$(DEV_CLUSTER_NAME) $(DEV_PRIVATE_SYNC) preflight
+
+dev.private.sync: ## Push cluster-config and charts to Gitea
+	@chmod +x "$(DEV_PRIVATE_SYNC)"
+	@DEV_CLUSTER_NAME=$(DEV_CLUSTER_NAME) $(DEV_PRIVATE_SYNC) sync
+
+dev.private.sync-config: ## Push reference/rosa-cluster-config to Gitea Git
+	@chmod +x "$(DEV_PRIVATE_SYNC)"
+	@DEV_CLUSTER_NAME=$(DEV_CLUSTER_NAME) $(DEV_PRIVATE_SYNC) sync-config
+
+dev.private.sync-charts: ## Upload charts to Gitea Helm package registry
+	@chmod +x "$(DEV_PRIVATE_SYNC)"
+	@DEV_CLUSTER_NAME=$(DEV_CLUSTER_NAME) $(DEV_PRIVATE_SYNC) sync-charts
 
 # Install OpenShift Provider
 PROVIDER_VERSION ?= 0.1.2

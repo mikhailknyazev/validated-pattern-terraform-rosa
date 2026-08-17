@@ -583,6 +583,7 @@ Do **not** treat docs as optional follow-up. Before considering the work done, s
 |----------|-----------------|--------------|
 | Getting started | `docs/getting-started/` (quick-start, authentication, …) | Operator workflow, credentials, or defaults change |
 | Enablement guide | `docs/deployment/enablement.md` | End-to-end deploy/bootstrap/login, tfvars recipes, credential hygiene |
+| Local multi-repo dev | `docs/guides/local-multi-repo-dev.md` | Gitea + Argo primary loop (`bootstrap-private`, `dev.private.sync`); optional `dev.public.apply-local` |
 | CI/CD | `docs/CI_CD.md` / `docs/guides/ci-cd.md` | Env vars, pipeline secrets, script contracts |
 | Scripts docs | `scripts/README.md`, `scripts/**/README*.md` | Script usage, required env vars, Make targets |
 | Module / cluster docs | `modules/**/README.md`, `clusters/README.md` | Module interface or example cluster patterns |
@@ -1291,20 +1292,6 @@ make test            # Run all tests (recommended before commit)
 6. Cert-manager/awspca bootstrap `--set certManagerRole` is the same idea for imperative Helm; metadata generalizes it for Argo-managed charts.
 7. When adding a new chart that needs AWS account or IRSA: follow this pattern; track remaining migrations in the platform-metadata rollout GitHub issue.
 
-### Platform metadata / IRSA bootstrap (chicken-and-egg)
-
-**Canonical doc:** [`docs/architecture/platform-metadata-irsa.md`](docs/architecture/platform-metadata-irsa.md).
-
-**Rules for agents:**
-
-1. **Terraform** creates IAM roles and SM secret payloads. **Bootstrap** publishes `rosa-platform-metadata` in `openshift-gitops`. **GitOps** must not hardcode `arn:aws:iam::ACCOUNT:role/...` for ESO (or similar) in portable recipes.
-2. Do **not** share one ESO/operator IAM role across clusters — OIDC trust is per cluster issuer.
-3. Do **not** design flows where ESO reads its own IRSA role ARN from Secrets Manager before IRSA is bound (circular).
-4. Prefer full ARNs from `terraform output` in metadata over name reconstruction in charts.
-5. Chart pattern: optional explicit `roleArn` for break-glass; happy path = `platformMetadata.enabled` + sync Job/hook.
-6. Cert-manager/awspca bootstrap `--set certManagerRole` is the same idea for imperative Helm; metadata generalizes it for Argo-managed charts.
-7. When adding a new chart that needs AWS account or IRSA: follow this pattern; track remaining migrations in the platform-metadata rollout GitHub issue.
-
 ### VPC Route Server / CUDN BGP (`enable_route_server`)
 
 Example recipe: `clusters/bgp/terraform.tfvars`. Human enablement: `docs/deployment/enablement.md` → **CUDN BGP / VPC Route Server**.
@@ -1423,7 +1410,7 @@ Before committing code, ensure:
 
 ## Reference Repositories
 
-**IMPORTANT**: The `./reference/` directory contains three reference repositories that provide valuable source code examples and patterns. These repositories significantly improve Cursor's accuracy and understanding of ROSA HCP Terraform patterns.
+**IMPORTANT**: The `./reference/` directory contains reference repositories (Terraform patterns, GitOps cluster-config, Helm charts) that improve Cursor accuracy and support the local multi-repo development loop. These clones are **gitignored** and are separate git remotes — commit/push in each repo as needed.
 
 ### Checking for Reference Repositories
 
@@ -1498,6 +1485,51 @@ Before committing code, ensure:
      - Understanding how to build API objects (builders)
      - Checking available methods on types (getters, setters)
    - **Example**: Used to verify `AuditLogBuilder.RoleArn()` and `AuditLog.GetRoleArn()` method names
+
+6. **rosa-cluster-config** (`./reference/rosa-cluster-config/`):
+   - **Purpose**: Day 2 GitOps configuration consumed by Argo CD (`dev/<cluster>/infrastructure.yaml`, `applications-ns.yaml`)
+   - **Source**: https://github.com/rh-mobb/rosa-cluster-config
+   - **When to Reference**: Editing infrastructure app lists, ESO/platform-metadata values, cluster-specific GitOps recipes
+   - **Local dev**: Parsed by `scripts/dev/public-local-loop.sh`; `gitops_git_path` in tfvars must match `dev/<cluster>/`
+
+7. **validated-pattern-helm-charts** (`./reference/validated-pattern-helm-charts/`):
+   - **Purpose**: Bootstrap and app-of-apps charts (`cluster-bootstrap`, `app-of-apps-infrastructure`, `external-secrets-operator`, etc.)
+   - **Source**: https://github.com/rh-mobb/validated-pattern-helm-charts
+   - **When to Reference**: Chart template changes, platform-metadata hooks, ESO install patterns
+   - **Local dev**: Primary loop — `dev.private.sync` after `bootstrap-private`; optional `dev.public.apply-local` escape hatch
+
+### Local multi-repo GitOps development
+
+**Canonical doc:** [`docs/guides/local-multi-repo-dev.md`](docs/guides/local-multi-repo-dev.md).
+
+**Rules for agents:**
+
+1. **Primary loop:** `make cluster.<profile>.bootstrap-private` → edit `reference/*` → `make dev.private.sync` → Argo sync (in-cluster Gitea = private customer Git + Helm plane).
+2. **Clone layout:** `reference/rosa-cluster-config` + `reference/validated-pattern-helm-charts` (separate git remotes; never commit into this repo).
+3. **Bootstrap still required once:** publishes `rosa-platform-metadata` — ESO charts depend on it.
+4. **Do not hardcode account ARNs** in portable cluster-config — use `platformMetadata.enabled: true` per [platform-metadata-irsa.md](docs/architecture/platform-metadata-irsa.md).
+5. **Make targets:** `make dev.private.sync`, `dev.private.sync-{config,charts}`, `dev.private.preflight`; optional `make dev.public.apply-local` (no Gitea/Argo).
+6. **PR land order** for cross-cutting GitOps: Terraform (IAM/metadata) → helm-charts → cluster-config; separate PRs per repo.
+7. **CHANGELOG scope:** Update this repo's `CHANGELOG.md` only for Terraform-repo changes; chart/cluster-config repos use their own changelogs.
+8. **Canonical merge validation:** Always run published Git + Helm Argo path before merge; local Gitea loop is for dev/demos.
+9. **Zero-egress ECR mirrors:** deferred — [#56](https://github.com/rh-mobb/validated-pattern-terraform-rosa/issues/56).
+10. **Credentials:** `clusters/<profile>/private-gitops.env` is gitignored — never commit.
+11. **Customer mapping:** Gitea → GitLab/GHE; Gitea Helm packages → Artifactory/Nexus HTTP repo.
+
+### GitOps Helm chart version pins
+
+**MANDATORY** when `validated-pattern-helm-charts` releases a new version, or when you change chart versions in `reference/validated-pattern-helm-charts` that this repo should consume on merge:
+
+1. **Bump Terraform defaults** in [`modules/infrastructure/cluster/01-variables.tf`](modules/infrastructure/cluster/01-variables.tf) — canonical source for bootstrap pins:
+   - `helm_chart_version`, `helm_chart_acm_spoke_version`, `helm_chart_acm_hub_registration_version`, `helm_chart_awspca_version`
+   - `app_of_apps_infrastructure_chart_version`, `app_of_apps_application_chart_version`, `app_of_apps_acm_team_onboarding_chart_version`
+2. **Keep script fallbacks in sync** in [`scripts/cluster/bootstrap-gitops.sh`](scripts/cluster/bootstrap-gitops.sh) (`HELM_CHART_VERSION:-…` etc.) — used only when `gitops_bootstrap_env_exports` is not eval'd.
+3. **Do not hardcode** chart versions in [`hub-values.yaml.tftpl`](modules/infrastructure/cluster/templates/hub-values.yaml.tftpl); use template variables from step 1.
+4. **Update operator docs**: pin table in [`docs/deployment/enablement.md`](docs/deployment/enablement.md).
+5. **CHANGELOG**: add/update an `[Unreleased]` entry in this repo for the same PR (chart repo has its own changelog).
+6. **Verify source of truth**: published [`index.yaml`](https://rh-mobb.github.io/validated-pattern-helm-charts/index.yaml) or local `reference/validated-pattern-helm-charts/charts/<chart>/Chart.yaml` `version:` field.
+
+`bootstrap-private` may patch `targetRevision` from reference `Chart.yaml` during local dev when the clone is ahead of Terraform — that is a dev-loop escape hatch, **not** a substitute for bumping Terraform defaults before merge.
 
 ### Using Reference Repositories
 

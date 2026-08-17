@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Local multi-repo dev (Gitea + Argo)**: [`docs/guides/local-multi-repo-dev.md`](docs/guides/local-multi-repo-dev.md) — `bootstrap-private`, `dev.private.sync`, reference clone layout; optional `dev.public.apply-local` escape hatch
+- **Private GitOps E2E runner**: `scripts/cluster/e2e-private-gitops.sh` — apply → `bootstrap-private` → `dev.private.sync` → Argo verification (`E2E_CLUSTER_NAME`, `E2E_CLUSTER_PROFILE` optional).
 - **VPC Route Server module** (`modules/infrastructure/route-server/`): New module for AWS VPC Route Server BGP integration with the CUDN BGP routing operator. Creates a Route Server with configurable ASN, 2 endpoints per private subnet, route propagation to all route tables (private and public), and an IRSA IAM role/policy for the operator. Enabled per-cluster via `enable_route_server = true` and `route_server_asn` in terraform.tfvars.
 - **Route Server variables / outputs**: Root `enable_route_server`, `route_server_asn`; outputs `route_server_id`, `route_server_asn`, `route_server_deployed`, `route_server_endpoint_ips`, `bgp_operator_role_arn`. Network modules export `private_route_table_ids` / `public_route_table_ids`.
 - **BGP config Secrets Manager secret (#51)**: Route Server module publishes `{cluster}-bgp-config` (`role_arn`, `region`, `route_server_id`, `route_server_ids`) and optionally attaches GetSecretValue on the ESO IAM role. Outputs `bgp_config_secret_name` / `bgp_config_secret_arn`. BGP recipe sets `enable_secrets_manager_iam = true` for GitOps ExternalSecret consumption.
@@ -213,11 +215,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documentation and versioning standards
 
 ### Fixed
+- **`bootstrap-private` laptop Helm against Gitea**: Use port-forward URL (`private_gitops_work_helm_repo_url`) instead of in-cluster `cluster.local` for repo setup and chart upload.
+- **`bootstrap-private` cluster-bootstrap install**: Install from local reference chart path when `--private` (Gitea Helm index embeds unreachable internal URLs).
+- **Gitea re-install on bootstrap retry**: Skip Helm upgrade when Gitea release is healthy and `private-gitops.env` exists (bootstrap user may lack `gitea` namespace RBAC).
+- **Gitea chart upload reliability**: Upload bootstrap charts first; retry package upload with backoff on HTTP 500; patch bootstrap `targetRevision` from reference `Chart.yaml` during `bootstrap-private`.
 - **HTPasswd greenfield plan (`Invalid count argument`)**: `modules/infrastructure/htpasswd-idp` no longer gates resource `count` on `cluster_id` (unknown until apply). Count depends only on `var.enabled`; a lifecycle precondition validates `cluster_id` at apply. Unblocks first `terraform plan` when `enable_cluster_admin = true`.
 - **Secrets Manager IAM greenfield plan**: ESO IAM policy no longer looks up `{cluster}-credentials` (or `additional_secrets`) via data sources. Uses Secrets Manager name-prefix ARN patterns (`…:secret:NAME-*`) so `enable_secrets_manager_iam = true` works on first apply before the cluster module creates the credentials secret.
 - **Bootstrap skipped `rosa-platform-metadata`**: `install_gitops_hub` called `good_exit` after Helm install, which exited the script before `publish_platform_metadata` / storage-class steps. Hub install now returns to `main()` so metadata is published. ConfigMap data values are quoted strings so numeric `awsAccountId` applies cleanly.
 
 ### Changed
+- **App-of-apps Helm chart pins**: `targetRevision` values in hub bootstrap templates are Terraform variables (`app_of_apps_infrastructure_chart_version` default `0.3.0`, `app_of_apps_application_chart_version` `1.5.8`, `app_of_apps_acm_team_onboarding_chart_version` `0.4.1`) instead of hardcoded literals.
 - **BGP recipe worker size**: `clusters/bgp` default workers use `m7i.2xlarge` (was `m5.xlarge`) for GitOps/BuildConfig headroom on greenfield applies.
 - **`.gitignore` hygiene**: Ignore `__pycache__/` / `*.py[cod]` anywhere and `clusters/*/logs/` (local apply/bootstrap/destroy artifacts).
 - **ROSA default SG wait duration**: Increased `rosa_default_sg_wait_duration` default from `30s` to `120s` (Hypershift SG tagging still exceeded 30s on a fresh autonode apply).

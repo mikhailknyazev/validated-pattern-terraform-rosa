@@ -343,24 +343,42 @@ flowchart LR
   SpokeChart[cluster-bootstrap-acm-spoke] --> HubReg[cluster-bootstrap-acm-hub-registration]
 ```
 
-**Version pinning:** Chart versions are hardcoded in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl):
+**Version pinning:** Bootstrap chart versions are Terraform variables in the cluster module ([`01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf)); hub bootstrap values render them via [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl).
 
-| Chart | Pinned version |
-|-------|----------------|
-| `app-of-apps-infrastructure` | `0.2.3` |
-| `app-of-apps-application` | `1.5.8` |
-| `app-of-apps-acm-team-onboarding` | `0.4.1` |
-| `cluster-bootstrap` | `0.5.19` (module / script default) |
-| `cluster-bootstrap-acm-spoke` | `0.6.14` (module / script default) |
-| `cluster-bootstrap-acm-hub-registration` | `0.2.2` (module / script default) |
-| `aws-privateca-issuer` | `1.6.1` (module / script default) |
+| Chart | Variable | Default |
+|-------|----------|---------|
+| `app-of-apps-infrastructure` | `app_of_apps_infrastructure_chart_version` | `0.3.0` |
+| `app-of-apps-application` | `app_of_apps_application_chart_version` | `1.5.8` |
+| `app-of-apps-acm-team-onboarding` | `app_of_apps_acm_team_onboarding_chart_version` | `0.4.1` |
+| `cluster-bootstrap` | `helm_chart_version` | `0.5.19` |
+| `cluster-bootstrap-acm-spoke` | `helm_chart_acm_spoke_version` | `0.6.14` |
+| `cluster-bootstrap-acm-hub-registration` | `helm_chart_acm_hub_registration_version` | `0.2.2` |
+| `aws-privateca-issuer` | `helm_chart_awspca_version` | `1.6.1` |
 
-Align your fork with these versions, or update the template in your infrastructure fork.
+Bump module defaults in [`01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) when validated-pattern-helm-charts releases new versions (or override when calling the cluster module). Local `bootstrap-private` may still patch pins from `reference/validated-pattern-helm-charts` when the clone is ahead of Terraform defaults.
 
 **Override Helm repo URL** (not exposed at root `terraform.tfvars` today):
 
 - Edit `helm_repo_url` default in [modules/infrastructure/cluster/01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf), **or**
 - Set `HELM_REPO_URL` at bootstrap time — see [README-bootstrap-gitops.md](../../scripts/cluster/README-bootstrap-gitops.md)
+
+### 3d. Local multi-repo development (in-cluster Gitea)
+
+For day-to-day feature work across **cluster-config** and **helm-charts**, use local `reference/` clones and push to **in-cluster Gitea** so Argo CD reconciles the same way a private customer would (GitLab + Artifactory analogue — no GitHub Pages or S3):
+
+```bash
+make cluster.<profile>.bootstrap-private
+# edit reference/rosa-cluster-config and reference/validated-pattern-helm-charts
+make dev.private.sync DEV_CLUSTER_NAME=<profile>
+```
+
+Gitea hosts **cluster-config Git** and a **Helm package registry** on a PVC. Chart sync uploads all `charts/*` from your local helm-charts clone (re-upload replaces the same version for fast iteration).
+
+Full guide: [Local Multi-Repo Development](../guides/local-multi-repo-dev.md).
+
+**Optional escape hatch** (single-chart speed, no Gitea/Argo): `make cluster.<profile>.bootstrap-skip-gitops` then `make dev.public.apply-local` — see the guide; not a substitute for merge validation.
+
+**Production validation:** Push PRs in each repo and run canonical Argo sync before merging.
 
 ### GitOps CMP tools container image
 
@@ -971,8 +989,8 @@ flowchart TD
   ReachGit -->|No| EgressFix[CodeCommit mirror or VPN]
   ReachGit -->|Yes| WorkersReady{Workers ready?}
   WorkersReady -->|No| WaitFix[Wait or adjust MIN_READY_WORKERS]
-  WorkersReady -->|Yes| ChartMatch{Chart versions match template?}
-  ChartMatch -->|No| PinFix[Align helm fork with hub-values template]
+  WorkersReady -->|Yes| ChartMatch{Chart versions match Terraform pins?}
+  ChartMatch -->|No| PinFix[Bump cluster-module chart variables or align helm fork]
   ChartMatch -->|Yes| CheckLogs[Check bootstrap script output and helm list -A]
 ```
 
@@ -984,7 +1002,7 @@ flowchart TD
 | CMP plugin apps stuck `Sync: Unknown` (`find: command not found` or plugin sidecar errors) | Repo-server CMP image missing tools or wrong/unreachable image | Use current `gitops-tools` image; re-host to private registry and set `gitops_tools_image` / `defaultImage` in bootstrap templates — [§3c GitOps CMP tools image](#gitops-cmp-tools-container-image) |
 | Repo-server can't pull CMP sidecar image | `ghcr.io` blocked (egress-zero, registry policy) | Mirror `gitops-tools` to ECR; update `defaultImage` in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) and [spoke-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) |
 | Wrong cluster-config branch synced | `gitops_git_target_revision` still `HEAD` or chart older than `0.5.18` | Set `gitops_git_target_revision` in tfvars and use `cluster-bootstrap` >= `0.5.18` |
-| Helm chart version mismatch | Versions hardcoded in template | Pin versions in your helm fork to match template |
+| Helm chart version mismatch | Terraform pin defaults out of sync with published Helm repo or Gitea upload | Bump defaults in [cluster `01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) (`helm_chart_version`, `app_of_apps_*_chart_version`, etc.); see §3c version pinning table. For `bootstrap-private`, values are also patched from `reference/validated-pattern-helm-charts` `Chart.yaml` when the clone is ahead. |
 | ACM examples default to `noacm` | `acm_mode` not in example tfvars | Set module variable; use `bootstrap-spoke` target |
 | Worker nodes not ready | Bootstrap waits for ≥2 Ready workers on single-AZ (60 min timeout for `.metal`); long NotReady on bare metal may need `default_auto_repair = false` | Set in `terraform.tfvars`; override `WORKER_READY_MAX_ATTEMPTS` if needed |
 | Cluster login fails (private) | No VPN to private API | Start Client VPN: `make cluster.<name>.vpn-start` |
@@ -993,7 +1011,7 @@ flowchart TD
 
 These improvements are documented as future work:
 
-- Expose `acm_mode`, `helm_repo_url`, and chart version pins at root `terraform.tfvars`
+- Expose `helm_repo_url` and chart version pins at root `terraform.tfvars` (optional overrides without forking the cluster module; `acm_mode` is already at root)
 - Automate CodeCommit repository creation and mirroring (see internal `docs/TODO.md`)
 
 ---
@@ -1011,17 +1029,20 @@ These improvements are documented as future work:
 | `gitops_git_repo_url` | cluster-config repository URL | `https://github.com/<org>/acme-cluster-config.git` |
 | `gitops_git_path` | Path under repo root | `dev/acme-dev` |
 | `gitops_git_target_revision` | Git branch/tag/commit for cluster-config values source (`gitTargetRevision`) | `HEAD` or `feature/my-branch` |
+| `acm_mode` | ACM bootstrap mode | `noacm`, `hub`, or `spoke` |
 
 **Cluster module only** ([modules/infrastructure/cluster/01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)) — set via fork or extend root passthrough:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `acm_mode` | `noacm` | `hub`, `spoke`, or `noacm` |
 | `helm_repo_url` | `https://rh-mobb.github.io/validated-pattern-helm-charts/` | Your published Helm repo |
 | `helm_chart_version` | `0.5.19` | `cluster-bootstrap` chart version |
 | `helm_chart_acm_spoke_version` | `0.6.14` | `cluster-bootstrap-acm-spoke` chart version |
 | `helm_chart_acm_hub_registration_version` | `0.2.2` | `cluster-bootstrap-acm-hub-registration` chart version |
 | `helm_chart_awspca_version` | `1.6.1` | `aws-privateca-issuer` chart version |
+| `app_of_apps_infrastructure_chart_version` | `0.3.0` | `app-of-apps-infrastructure` `targetRevision` in hub bootstrap values |
+| `app_of_apps_application_chart_version` | `1.5.8` | `app-of-apps-application` `targetRevision` (non-hub `acm_mode`) |
+| `app_of_apps_acm_team_onboarding_chart_version` | `0.4.1` | `app-of-apps-acm-team-onboarding` `targetRevision` (hub `acm_mode`) |
 | `gitops_tools_image` | `ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest` | Optional CMP repo-server sidecar tooling image (used when `plugin: true`); re-host for egress-zero or registry policy — see [§3c](#gitops-cmp-tools-container-image) |
 | `gitops_csv` | `openshift-gitops-operator.v1.19.2` | GitOps operator CSV |
 | `hub_credentials_secret_name` | `""` | Hub secret for spoke mode |

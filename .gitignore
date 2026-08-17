@@ -87,6 +87,8 @@ acm-crds.yaml
 kubeconfig
 values.generated.yaml
 
+clusters/*/private-gitops.env
+
 # MkDocs local build
 .venv-docs/
 site/

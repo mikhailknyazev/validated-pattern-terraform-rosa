@@ -85,6 +85,7 @@ nav:
       - Cluster Configurations: deployment/cluster-configurations.md
   - Guides:
       - Egress-Zero GitOps: guides/egress-zero-gitops.md
+      - Local Multi-Repo Dev: guides/local-multi-repo-dev.md
       - Zero Egress ECR Access: guides/zero-egress-ecr-access.md
       - CI/CD: guides/ci-cd.md
       - Infra Nodes: guides/infra-nodes.md
