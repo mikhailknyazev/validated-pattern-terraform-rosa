@@ -51,6 +51,17 @@ data "aws_subnet" "existing_public" {
   id    = coalesce(var.existing_public_subnet_ids, [])[count.index]
 }
 
+# Look up route tables for BYO VPC subnets (needed for Route Server propagation)
+data "aws_route_table" "existing_private" {
+  count     = var.network_type == "existing" && var.existing_private_subnet_ids != null ? length(var.existing_private_subnet_ids) : 0
+  subnet_id = var.existing_private_subnet_ids[count.index]
+}
+
+data "aws_route_table" "existing_public" {
+  count     = var.network_type == "existing" ? length(coalesce(var.existing_public_subnet_ids, [])) : 0
+  subnet_id = coalesce(var.existing_public_subnet_ids, [])[count.index]
+}
+
 # Create a normalized network object from the active network source.
 # Each branch constructs an object with identical attributes and explicit tolist()
 # conversions to ensure consistent list(string) types across all branches.
@@ -60,31 +71,37 @@ data "aws_subnet" "existing_public" {
 locals {
   network = (
     var.network_type == "public" ? {
-      vpc_id               = module.network_public[0].vpc_id
-      vpc_cidr_block       = module.network_public[0].vpc_cidr_block
-      private_subnet_ids   = tolist(module.network_public[0].private_subnet_ids)
-      public_subnet_ids    = tolist(module.network_public[0].public_subnet_ids)
-      private_subnet_azs   = tolist(module.network_public[0].private_subnet_azs)
-      private_subnet_cidrs = tolist(module.network_public[0].private_subnet_cidrs)
-      security_group_id    = null
+      vpc_id                  = module.network_public[0].vpc_id
+      vpc_cidr_block          = module.network_public[0].vpc_cidr_block
+      private_subnet_ids      = tolist(module.network_public[0].private_subnet_ids)
+      public_subnet_ids       = tolist(module.network_public[0].public_subnet_ids)
+      private_subnet_azs      = tolist(module.network_public[0].private_subnet_azs)
+      private_subnet_cidrs    = tolist(module.network_public[0].private_subnet_cidrs)
+      private_route_table_ids = tolist(module.network_public[0].private_route_table_ids)
+      public_route_table_ids  = tolist(module.network_public[0].public_route_table_ids)
+      security_group_id       = null
     } :
     var.network_type == "existing" ? {
-      vpc_id               = var.existing_vpc_id
-      vpc_cidr_block       = var.vpc_cidr
-      private_subnet_ids   = tolist(coalesce(var.existing_private_subnet_ids, []))
-      public_subnet_ids    = tolist(coalesce(var.existing_public_subnet_ids, []))
-      private_subnet_azs   = tolist([for s in data.aws_subnet.existing_private : s.availability_zone])
-      private_subnet_cidrs = tolist([for s in data.aws_subnet.existing_private : s.cidr_block])
-      security_group_id    = null
+      vpc_id                  = var.existing_vpc_id
+      vpc_cidr_block          = var.vpc_cidr
+      private_subnet_ids      = tolist(coalesce(var.existing_private_subnet_ids, []))
+      public_subnet_ids       = tolist(coalesce(var.existing_public_subnet_ids, []))
+      private_subnet_azs      = tolist([for s in data.aws_subnet.existing_private : s.availability_zone])
+      private_subnet_cidrs    = tolist([for s in data.aws_subnet.existing_private : s.cidr_block])
+      private_route_table_ids = tolist([for rt in data.aws_route_table.existing_private : rt.route_table_id])
+      public_route_table_ids  = tolist([for rt in data.aws_route_table.existing_public : rt.route_table_id])
+      security_group_id       = null
     } :
     {
-      vpc_id               = module.network_private[0].vpc_id
-      vpc_cidr_block       = module.network_private[0].vpc_cidr_block
-      private_subnet_ids   = tolist(module.network_private[0].private_subnet_ids)
-      public_subnet_ids    = tolist([])
-      private_subnet_azs   = tolist(module.network_private[0].private_subnet_azs)
-      private_subnet_cidrs = tolist(module.network_private[0].private_subnet_cidrs)
-      security_group_id    = module.network_private[0].security_group_id
+      vpc_id                  = module.network_private[0].vpc_id
+      vpc_cidr_block          = module.network_private[0].vpc_cidr_block
+      private_subnet_ids      = tolist(module.network_private[0].private_subnet_ids)
+      public_subnet_ids       = tolist([])
+      private_subnet_azs      = tolist(module.network_private[0].private_subnet_azs)
+      private_subnet_cidrs    = tolist(module.network_private[0].private_subnet_cidrs)
+      private_route_table_ids = tolist(module.network_private[0].private_route_table_ids)
+      public_route_table_ids  = tolist([])
+      security_group_id       = module.network_private[0].security_group_id
     }
   )
 }
@@ -173,8 +190,8 @@ module "iam" {
   control_plane_log_cloudwatch_enabled        = var.control_plane_log_cloudwatch_enabled
   control_plane_log_cloudwatch_log_group_name = var.control_plane_log_cloudwatch_log_group_name
 
-  # Note: cluster_credentials_secret_arn is no longer passed as a variable
-  # The IAM module looks up the secret by name (${cluster_name}-credentials) to avoid circular dependency
+  # Note: cluster_credentials_secret_arn is not passed — IAM uses name-prefix ARN patterns
+  # (${cluster_name}-credentials-*) so greenfield apply does not require the secret to exist yet
 }
 
 module "cluster" {
@@ -264,9 +281,11 @@ module "cluster" {
   # Termination Protection (IAM resources are in IAM module)
   enable_termination_protection = var.enable_termination_protection
 
-  # GitOps bootstrap configuration - IAM role ARNs from IAM module
+  # GitOps bootstrap configuration - IAM role ARNs from IAM module (rosa-platform-metadata)
   aws_private_ca_arn           = var.aws_private_ca_arn
   cert_manager_role_arn        = module.iam.cert_manager_role_arn
+  secrets_manager_role_arn     = module.iam.secrets_manager_role_arn
+  bgp_config_secret_name       = var.enable_route_server ? "${var.cluster_name}-bgp-config" : null
   channel                      = var.channel
   openshift_version            = var.openshift_version
   upgrade_acknowledgements_for = var.upgrade_acknowledgements_for
@@ -438,4 +457,31 @@ module "client_vpn" {
   service_cidr               = var.service_cidr
 
   tags = local.tags
+}
+
+#------------------------------------------------------------------------------
+# AWS VPC Route Server (for BGP routing with CUDN operator)
+#------------------------------------------------------------------------------
+
+module "route_server" {
+  count  = var.enable_route_server && var.persists_through_sleep && length(local.network.private_subnet_ids) > 0 ? 1 : 0
+  source = "../modules/infrastructure/route-server"
+
+  cluster_name            = var.cluster_name
+  region                  = var.region
+  vpc_id                  = local.network.vpc_id
+  private_subnet_ids      = local.network.private_subnet_ids
+  private_route_table_ids = local.network.private_route_table_ids
+  public_route_table_ids  = local.network.public_route_table_ids
+  oidc_endpoint_url       = module.iam.oidc_endpoint_url
+  route_server_asn        = var.route_server_asn
+  tags                    = local.tags
+  persists_through_sleep  = var.persists_through_sleep
+
+  # When ESO IAM is enabled, attach GetSecretValue for {cluster}-bgp-config (issue #51).
+  secrets_manager_role_name = var.enable_secrets_manager_iam ? module.iam.secrets_manager_role_name : null
+
+  custom_permissions_boundary_arn = var.custom_permissions_boundary_arn
+
+  depends_on = [module.network_public, module.network_private, module.iam]
 }

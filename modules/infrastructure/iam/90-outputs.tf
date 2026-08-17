@@ -105,6 +105,12 @@ output "secrets_manager_role_arn" {
   sensitive   = false
 }
 
+output "secrets_manager_role_name" {
+  description = "Name of the Secrets Manager IAM role for External Secrets Operator IRSA (null if enable_secrets_manager_iam is false)"
+  value       = length(aws_iam_role.secrets_manager) > 0 ? aws_iam_role.secrets_manager[0].name : null
+  sensitive   = false
+}
+
 output "external_secrets_role_arn" {
   description = "Alias of secrets_manager_role_arn for External Secrets Operator IRSA (null if enable_secrets_manager_iam is false)"
   value       = length(aws_iam_role.secrets_manager) > 0 ? aws_iam_role.secrets_manager[0].arn : null

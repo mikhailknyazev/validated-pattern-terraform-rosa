@@ -18,6 +18,7 @@ if [ -z "$CLUSTER_NAME" ]; then
 fi
 
 CLUSTER_DIR=$(get_cluster_dir "$CLUSTER_NAME")
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
 warn "WARNING: This will DESTROY the infrastructure!"

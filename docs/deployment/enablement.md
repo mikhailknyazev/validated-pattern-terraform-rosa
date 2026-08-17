@@ -343,32 +343,53 @@ flowchart LR
   SpokeChart[cluster-bootstrap-acm-spoke] --> HubReg[cluster-bootstrap-acm-hub-registration]
 ```
 
-**Version pinning:** Chart versions are hardcoded in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl):
+**Version pinning:** Bootstrap chart versions are Terraform variables in the cluster module ([`01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf)); hub bootstrap values render them via [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl).
 
-| Chart | Pinned version |
-|-------|----------------|
-| `app-of-apps-infrastructure` | `0.2.3` |
-| `app-of-apps-application` | `1.5.8` |
-| `app-of-apps-acm-team-onboarding` | `0.4.1` |
-| `cluster-bootstrap` | `0.5.19` (module / script default) |
-| `cluster-bootstrap-acm-spoke` | `0.6.14` (module / script default) |
-| `cluster-bootstrap-acm-hub-registration` | `0.2.2` (module / script default) |
-| `aws-privateca-issuer` | `1.6.1` (module / script default) |
+| Chart | Variable | Default |
+|-------|----------|---------|
+| `app-of-apps-infrastructure` | `app_of_apps_infrastructure_chart_version` | `0.3.0` |
+| `app-of-apps-application` | `app_of_apps_application_chart_version` | `1.5.8` |
+| `app-of-apps-acm-team-onboarding` | `app_of_apps_acm_team_onboarding_chart_version` | `0.4.1` |
+| `cluster-bootstrap` | `helm_chart_version` | `0.5.19` |
+| `cluster-bootstrap-acm-spoke` | `helm_chart_acm_spoke_version` | `0.6.14` |
+| `cluster-bootstrap-acm-hub-registration` | `helm_chart_acm_hub_registration_version` | `0.2.2` |
+| `aws-privateca-issuer` | `helm_chart_awspca_version` | `1.6.1` |
 
-Align your fork with these versions, or update the template in your infrastructure fork.
+Bump module defaults in [`01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) when validated-pattern-helm-charts releases new versions (or override when calling the cluster module). Local `bootstrap-private` may still patch pins from `reference/validated-pattern-helm-charts` when the clone is ahead of Terraform defaults.
 
 **Override Helm repo URL** (not exposed at root `terraform.tfvars` today):
 
 - Edit `helm_repo_url` default in [modules/infrastructure/cluster/01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf), **or**
 - Set `HELM_REPO_URL` at bootstrap time — see [README-bootstrap-gitops.md](../../scripts/cluster/README-bootstrap-gitops.md)
 
+### 3d. Local multi-repo development (in-cluster Gitea)
+
+For day-to-day feature work across **cluster-config** and **helm-charts**, use local `reference/` clones and push to **in-cluster Gitea** so Argo CD reconciles the same way a private customer would (GitLab + Artifactory analogue — no GitHub Pages or S3):
+
+```bash
+make cluster.<profile>.bootstrap-private
+# edit reference/rosa-cluster-config and reference/validated-pattern-helm-charts
+make dev.private.sync DEV_CLUSTER_NAME=<profile>
+```
+
+Gitea hosts **cluster-config Git** and a **Helm package registry** on a PVC. Chart sync uploads all `charts/*` from your local helm-charts clone (re-upload replaces the same version for fast iteration).
+
+Full guide: [Local Multi-Repo Development](../guides/local-multi-repo-dev.md).
+
+**Optional escape hatch** (single-chart speed, no Gitea/Argo): `make cluster.<profile>.bootstrap-skip-gitops` then `make dev.public.apply-local` — see the guide; not a substitute for merge validation.
+
+**Production validation:** Push PRs in each repo and run canonical Argo sync before merging.
+
 ### GitOps CMP tools container image
 
 **Default secrets path:** AWS Secrets Manager integration uses the Red Hat External Secrets Operator (ESO), not AVP. Standard flow is:
 
 1. Terraform creates IAM role access for Secrets Manager ([`enable_secrets_manager_iam = true`](../../terraform/01-variables.tf))
-2. ESO uses `external-secrets-operator:external-secrets-sa` IRSA
-3. `ClusterSecretStore` + `ExternalSecret` sync remote values into Kubernetes `Secret` objects
+2. Bootstrap publishes ConfigMap `rosa-platform-metadata` (includes `secretsManagerRoleArn`) — see [Platform metadata / IRSA](../architecture/platform-metadata-irsa.md)
+3. GitOps installs ESO with `platformMetadata.enabled: true` (no hardcoded account ARN in cluster-config); a chart Job binds IRSA from the ConfigMap
+4. `ClusterSecretStore` + `ExternalSecret` sync remote values into Kubernetes `Secret` objects
+
+Do **not** hardcode `arn:aws:iam::ACCOUNT:role/...` for ESO in portable cluster-config — multi-account fleets break, and ESO cannot read its own role from SM before IRSA exists (chicken-and-egg). Full reasoning: [platform-metadata-irsa.md](../architecture/platform-metadata-irsa.md).
 
 See the [`external-secrets-operator` chart](https://github.com/rh-mobb/validated-pattern-helm-charts/tree/main/charts/external-secrets-operator) in your cluster-config infrastructure applications and the Terraform toggle [`enable_secrets_manager_iam`](../../terraform/01-variables.tf).
 
@@ -600,6 +621,7 @@ flowchart TB
 | Cluster access | `enable_client_vpn`, `enable_bastion` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) |
 | Compute model | `enable_autonode`, `default_*_replicas`, `additional_machine_pools` | [autonode](../../clusters/autonode/terraform.tfvars), [public](../../clusters/public/terraform.tfvars) |
 | Fleet / ACM | `acm_mode`, hub/spoke bootstrap targets | [dev-hub-1](../../clusters/dev-hub-1/terraform.tfvars), [dev-spoke-1](../../clusters/dev-spoke-1/terraform.tfvars) |
+| BGP / Route Server | `enable_route_server`, `route_server_asn`, metal `additional_machine_pools` | [bgp](../../clusters/bgp/terraform.tfvars) — see [CUDN BGP / VPC Route Server](#cudn-bgp--vpc-route-server) |
 | GitOps | `enable_gitops_bootstrap`, `gitops_git_repo_url`, `gitops_git_path` | Any example with GitOps enabled |
 | Day-0 / break-glass login | `enable_cluster_admin` (default `false`; examples set `true`) | All example tfvars; see [Authentication](../getting-started/authentication.md) |
 | Production hardening | `openshift_version`, KMS, `fips`, `enable_termination_protection` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) |
@@ -656,6 +678,83 @@ Use these as copy-paste sources — not as exclusive cluster "types":
 | [autonode](../../clusters/autonode/terraform.tfvars) | `enable_autonode`, `additional_cluster_properties`, version/region |
 | [dev-hub-1](../../clusters/dev-hub-1/terraform.tfvars) | Hub cluster sizing; set `acm_mode = hub` in module |
 | [dev-spoke-1](../../clusters/dev-spoke-1/terraform.tfvars) | Spoke GitOps path; use `bootstrap-spoke` Makefile target |
+| [bgp](../../clusters/bgp/terraform.tfvars) | `enable_route_server`, multi-AZ metal BGP routers, GitOps path `dev/bgp` |
+
+### CUDN BGP / VPC Route Server
+
+Use the [bgp](../../clusters/bgp/terraform.tfvars) recipe to provision AWS VPC Route Server + IRSA for the [CUDN BGP routing operator](https://github.com/jingczhang/rosa-bgp-operator), with OpenShift Virtualization and operator install driven by [rosa-cluster-config `dev/bgp`](https://github.com/rh-mobb/rosa-cluster-config/tree/main/dev/bgp).
+
+**What Terraform creates** when `enable_route_server = true`:
+
+| Resource | Purpose |
+|----------|---------|
+| VPC Route Server + ASN | Amazon-side BGP peer (`route_server_asn`, default `64512`) |
+| Endpoints (2 per private subnet) | BGP neighbor ENIs; operator discovers via `DescribeRouteServerEndpoints` |
+| Route propagation | Private + public route tables |
+| IAM role/policy (IRSA) | Trusts `openshift-cudn-bgp-routing:openshift-cudn-bgp-routing-controller-manager` |
+
+**Recipe characteristics** (`clusters/bgp`):
+
+- Public multi-AZ ROSA HCP, OCP **4.21+** (example pins `4.22.2` / `fast-4.22`) for FRR-K8s / CUDN / RouteAdvertisements
+- One **Intel bare-metal** worker pool per AZ (`c5.metal`) labeled `bgp_router=true` (OpenShift Virtualization — nested virt is not supported for this path)
+- GitOps path `dev/bgp` installs `rosa-virtualization` + `cudn-bgp-routing-operator`
+- Set `enable_cluster_admin = true` for `make cluster.bgp.login`
+
+**Cost warning:** Three `c5.metal` nodes in `ap-southeast-2` are ~$16/hr on-demand. Tear down promptly after validation (`make cluster.bgp.destroy_force`).
+
+#### Deploy
+
+```bash
+# Requires AWS + RHCS/OCM credentials (service account preferred for apply)
+make cluster.bgp.init
+make cluster.bgp.plan
+make cluster.bgp.apply      # 30–45+ minutes; Route Server finishes early, ROSA cluster dominates
+make cluster.bgp.bootstrap  # GitOps + short-lived bootstrap HTPasswd
+make cluster.bgp.login      # break-glass admin from Secrets Manager
+```
+
+#### Wire BGP config via External Secrets (preferred — issue #51)
+
+Terraform publishes `{cluster_name}-bgp-config` to AWS Secrets Manager (`role_arn`, `region`, `route_server_id`, `route_server_ids`) when `enable_route_server = true`. With `enable_secrets_manager_iam = true`, the ESO IRSA role can read that secret.
+
+Architecture (do not hardcode ESO/operator ARNs in git):
+
+1. Bootstrap writes `rosa-platform-metadata` (`secretsManagerRoleArn`, `bgpConfigSecretName`, …) — [platform-metadata-irsa.md](../architecture/platform-metadata-irsa.md)
+2. GitOps installs ESO with `platformMetadata.enabled: true` (binds IRSA from ConfigMap)
+3. `cudn-bgp-routing-operator` uses `externalSecret` for operator role / region / routeServerIDs from `{cluster}-bgp-config`
+
+Keep `defaults.plugin: false` in [rosa-cluster-config](https://github.com/rh-mobb/rosa-cluster-config) `dev/bgp/infrastructure.yaml`. Set ESO `target.enabled: false` unless you need the Kuadrant credentials ExternalSecret.
+
+```bash
+# Optional verification after apply / bootstrap
+cd terraform
+export TF_DATA_DIR="../clusters/bgp/.terraform"
+terraform init -reconfigure -input=false \
+  -backend-config="path=$(pwd)/../clusters/bgp/infrastructure.tfstate" >/dev/null
+terraform output -raw bgp_config_secret_name
+terraform output -raw secrets_manager_role_arn
+oc -n openshift-gitops get configmap rosa-platform-metadata -o yaml
+```
+
+Manual fallback (no ESO): annotate the operator ServiceAccount with `bgp_operator_role_arn` and set `cudnBgpConfig.aws` from `route_server_id` / region, then restart the manager pod.
+
+#### Post-deploy validation checklist
+
+1. Workers Ready including three metal BGP routers (`oc get nodes -l bgp_router=true`)
+2. OpenShift Virtualization / CNV operator healthy
+3. Operator pod Running in `openshift-cudn-bgp-routing` with IRSA (no AWS credential errors in logs)
+4. `CUDNBgpConfig` status shows discovered Route Server endpoints / ASN
+5. Route Server peers exist for BGP router node IPs (`aws ec2 describe-route-server-peers`)
+
+#### Teardown
+
+```bash
+make cluster.bgp.destroy_force
+```
+
+Unregister ACM spokes first if this cluster was imported to a hub. Confirm Route Server and metal instances are gone in the AWS console before walking away (cost).
+
+Module reference: [modules/infrastructure/route-server/README.md](../../modules/infrastructure/route-server/README.md).
 
 ### Post-bootstrap validation
 
@@ -721,6 +820,49 @@ sequenceDiagram
 | Spoke teardown | `make cluster.<spoke>.teardown-spoke HUB_CREDENTIALS_SECRET=<secret> ACM_REGION=<region>` |
 
 Hub credentials are stored in AWS Secrets Manager. The spoke bootstrap script reads hub credentials from the secret named in `HUB_CREDENTIALS_SECRET`.
+
+**Interim requirement (#45 / #48):** `HUB_CREDENTIALS_SECRET` must be the hub’s **break-glass admin** secret (`enable_cluster_admin = true` on the hub). Spoke bootstrap cannot use the hub’s short-lived bootstrap HTPasswd user (torn down after hub bootstrap). A durable automation credential model is tracked in [#48](https://github.com/rh-mobb/validated-pattern-terraform-rosa/issues/48).
+
+**Kubeconfig isolation (#45):** `bootstrap-gitops.sh` uses process-local ephemeral `KUBECONFIG` files (not `~/.kube/config`) and asserts the spoke API before applying ACM import manifests, so concurrent `oc login` cannot cause a false “already imported” skip.
+
+**ACM readiness (#45):** Spoke bootstrap waits for ManagedCluster CRDs and `ocm-webhook` endpoints in `multicluster-engine` before hub-registration. Hub GitOps finishing does not mean ACM is ready to import spokes; applying too early fails (CRDs missing or webhook with zero endpoints).
+
+### Parallel hub + spoke apply / destroy (optional)
+
+Terraform **apply** and **destroy** for the hub and one or more spokes can run at the same time from a single checkout. Each cluster keeps its own state and Terraform data dir under `clusters/<name>/` (`infrastructure.tfstate` + `.terraform/`), so concurrent `make cluster.<name>.{init,plan,apply,destroy}` does not collide.
+
+**Bootstrap** is still ordered: hub first, then each spoke (`bootstrap-spoke`). Teardown of GitOps/ACM registration (`teardown-spoke`) should finish before destroying the hub if spokes still depend on it.
+
+Example (1 hub + 1 spoke) — two terminals or tmux panes in the same repo:
+
+```bash
+# Terminal 1 — hub
+make cluster.dev-hub-1.apply
+
+# Terminal 2 — spoke (same checkout)
+make cluster.dev-spoke-1.apply
+```
+
+After both applies succeed:
+
+```bash
+make cluster.dev-hub-1.bootstrap
+make cluster.dev-spoke-1.bootstrap-spoke \
+  HUB_CREDENTIALS_SECRET=dev-hub-1-credentials \
+  ACM_REGION=<region>
+```
+
+Parallel destroy (after spoke teardown if registered):
+
+```bash
+# Terminal 1
+make cluster.dev-hub-1.destroy_force
+
+# Terminal 2
+make cluster.dev-spoke-1.destroy_force
+```
+
+Serial apply/destroy from one terminal remains fine if you do not need the time savings.
 
 **Known limitation:** `acm_mode` is defined in the cluster module ([01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)) but not yet exposed in root [terraform/10-main.tf](../../terraform/10-main.tf). Set it in your fork's module call or extend root variable passthrough. Example cluster directories named `dev-hub-1` / `dev-spoke-1` default to `noacm` unless you configure `acm_mode` explicitly; `bootstrap-spoke` overrides `ACM_MODE=spoke` at runtime via the Makefile.
 
@@ -890,8 +1032,8 @@ flowchart TD
   ReachGit -->|No| EgressFix[CodeCommit mirror or VPN]
   ReachGit -->|Yes| WorkersReady{Workers ready?}
   WorkersReady -->|No| WaitFix[Wait or adjust MIN_READY_WORKERS]
-  WorkersReady -->|Yes| ChartMatch{Chart versions match template?}
-  ChartMatch -->|No| PinFix[Align helm fork with hub-values template]
+  WorkersReady -->|Yes| ChartMatch{Chart versions match Terraform pins?}
+  ChartMatch -->|No| PinFix[Bump cluster-module chart variables or align helm fork]
   ChartMatch -->|Yes| CheckLogs[Check bootstrap script output and helm list -A]
 ```
 
@@ -903,7 +1045,7 @@ flowchart TD
 | CMP plugin apps stuck `Sync: Unknown` (`find: command not found` or plugin sidecar errors) | Repo-server CMP image missing tools or wrong/unreachable image | Use current `gitops-tools` image; re-host to private registry and set `gitops_tools_image` / `defaultImage` in bootstrap templates — [§3c GitOps CMP tools image](#gitops-cmp-tools-container-image) |
 | Repo-server can't pull CMP sidecar image | `ghcr.io` blocked (egress-zero, registry policy) | Mirror `gitops-tools` to ECR; update `defaultImage` in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) and [spoke-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) |
 | Wrong cluster-config branch synced | `gitops_git_target_revision` still `HEAD` or chart older than `0.5.18` | Set `gitops_git_target_revision` in tfvars and use `cluster-bootstrap` >= `0.5.18` |
-| Helm chart version mismatch | Versions hardcoded in template | Pin versions in your helm fork to match template |
+| Helm chart version mismatch | Terraform pin defaults out of sync with published Helm repo or Gitea upload | Bump defaults in [cluster `01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) (`helm_chart_version`, `app_of_apps_*_chart_version`, etc.); see §3c version pinning table. For `bootstrap-private`, values are also patched from `reference/validated-pattern-helm-charts` `Chart.yaml` when the clone is ahead. |
 | ACM examples default to `noacm` | `acm_mode` not in example tfvars | Set module variable; use `bootstrap-spoke` target |
 | Worker nodes not ready | Bootstrap waits for ≥2 Ready workers on single-AZ (60 min timeout for `.metal`); long NotReady on bare metal may need `default_auto_repair = false` | Set in `terraform.tfvars`; override `WORKER_READY_MAX_ATTEMPTS` if needed |
 | Cluster login fails (private) | No VPN to private API | Start Client VPN: `make cluster.<name>.vpn-start` |
@@ -912,7 +1054,7 @@ flowchart TD
 
 These improvements are documented as future work:
 
-- Expose `acm_mode`, `helm_repo_url`, and chart version pins at root `terraform.tfvars`
+- Expose `helm_repo_url` and chart version pins at root `terraform.tfvars` (optional overrides without forking the cluster module; `acm_mode` is already at root)
 - Automate CodeCommit repository creation and mirroring (see internal `docs/TODO.md`)
 
 ---
@@ -930,17 +1072,20 @@ These improvements are documented as future work:
 | `gitops_git_repo_url` | cluster-config repository URL | `https://github.com/<org>/acme-cluster-config.git` |
 | `gitops_git_path` | Path under repo root | `dev/acme-dev` |
 | `gitops_git_target_revision` | Git branch/tag/commit for cluster-config values source (`gitTargetRevision`) | `HEAD` or `feature/my-branch` |
+| `acm_mode` | ACM bootstrap mode | `noacm`, `hub`, or `spoke` |
 
 **Cluster module only** ([modules/infrastructure/cluster/01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)) — set via fork or extend root passthrough:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `acm_mode` | `noacm` | `hub`, `spoke`, or `noacm` |
 | `helm_repo_url` | `https://rh-mobb.github.io/validated-pattern-helm-charts/` | Your published Helm repo |
 | `helm_chart_version` | `0.5.19` | `cluster-bootstrap` chart version |
 | `helm_chart_acm_spoke_version` | `0.6.14` | `cluster-bootstrap-acm-spoke` chart version |
 | `helm_chart_acm_hub_registration_version` | `0.2.2` | `cluster-bootstrap-acm-hub-registration` chart version |
 | `helm_chart_awspca_version` | `1.6.1` | `aws-privateca-issuer` chart version |
+| `app_of_apps_infrastructure_chart_version` | `0.3.0` | `app-of-apps-infrastructure` `targetRevision` in hub bootstrap values |
+| `app_of_apps_application_chart_version` | `1.5.8` | `app-of-apps-application` `targetRevision` (non-hub `acm_mode`) |
+| `app_of_apps_acm_team_onboarding_chart_version` | `0.4.1` | `app-of-apps-acm-team-onboarding` `targetRevision` (hub `acm_mode`) |
 | `gitops_tools_image` | `ghcr.io/rh-mobb/validated-pattern-terraform-rosa/gitops-tools:latest` | Optional CMP repo-server sidecar tooling image (used when `plugin: true`); re-host for egress-zero or registry policy — see [§3c](#gitops-cmp-tools-container-image) |
 | `gitops_csv` | `openshift-gitops-operator.v1.19.2` | GitOps operator CSV |
 | `hub_credentials_secret_name` | `""` | Hub secret for spoke mode |

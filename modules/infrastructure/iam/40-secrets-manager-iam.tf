@@ -6,51 +6,41 @@
 # IMPORTANT: The OIDC endpoint URL must NOT include the "https://" prefix when used in IAM trust policies.
 # Reference: Red Hat documentation shows stripping https:// from the OIDC endpoint URL
 #
-# SECURITY: This implementation uses explicit secret ARN lists instead of wildcards for maximum security.
-# Only explicitly listed secrets are accessible via GetSecretValue. ListSecrets requires "*" but actual
-# secret access is restricted by the explicit ARN list.
+# SECURITY: GetSecretValue/DescribeSecret are scoped to named secrets via ARN name-prefix patterns
+# (AWS appends a random suffix to secret ARNs). ListSecrets requires "*".
+# Do NOT look up secrets with data sources here: {cluster}-credentials is created later by the
+# cluster module — greenfield apply must not require the secret to already exist.
 
-# Data source for cluster credentials secret (lookup by name to avoid circular dependency)
-# Secret name follows pattern: ${cluster_name}-credentials
-data "aws_secretsmanager_secret" "cluster_credentials" {
-  count = local.persists_through_sleep && var.enable_secrets_manager_iam ? 1 : 0
-  name  = "${var.cluster_name}-credentials"
-}
+data "aws_region" "secrets_manager" {}
 
-# Data sources for additional secrets (if provided)
-# Lookup secrets by name to get exact ARNs for the IAM policy
-data "aws_secretsmanager_secret" "additional" {
-  for_each = local.persists_through_sleep && var.enable_secrets_manager_iam && var.additional_secrets != null ? toset(var.additional_secrets) : toset([])
-  name     = each.value
-}
-
-# Build list of all secret ARNs (default + additional)
+# Build secret ARN allowlist without requiring secrets to exist yet.
+# Pattern: arn:aws:secretsmanager:region:account:secret:NAME-*
 locals {
-  # Default secret ARN (cluster credentials - from data source lookup)
-  default_secret_arn = local.persists_through_sleep && var.enable_secrets_manager_iam && length(data.aws_secretsmanager_secret.cluster_credentials) > 0 ? data.aws_secretsmanager_secret.cluster_credentials[0].arn : null
+  secrets_manager_secret_arn_prefix = "arn:${data.aws_partition.current.partition}:secretsmanager:${data.aws_region.secrets_manager.id}:${data.aws_caller_identity.current.account_id}:secret"
 
-  # Additional secret ARNs from data source lookups
-  additional_secret_arns = local.persists_through_sleep && var.enable_secrets_manager_iam && var.additional_secrets != null ? [
+  # Default: cluster credentials secret created by cluster identity-provider module
+  default_secret_arn_pattern = "${local.secrets_manager_secret_arn_prefix}:${var.cluster_name}-credentials-*"
+
+  # Optional extras (same name-prefix pattern; secrets may be created outside this module)
+  additional_secret_arn_patterns = var.additional_secrets != null ? [
     for secret_name in var.additional_secrets :
-    data.aws_secretsmanager_secret.additional[secret_name].arn
+    "${local.secrets_manager_secret_arn_prefix}:${secret_name}-*"
   ] : []
 
-  # Combine all secret ARNs (filter out nulls)
-  all_secret_arns = compact(concat(
-    local.default_secret_arn != null ? [local.default_secret_arn] : [],
-    local.additional_secret_arns
-  ))
+  all_secret_arns = concat(
+    [local.default_secret_arn_pattern],
+    local.additional_secret_arn_patterns
+  )
 }
 
 # IAM Policy for Secrets Manager
-# Grants permissions to access specific secrets via explicit ARN list
-# Uses explicit ARNs for GetSecretValue (secure) and "*" for ListSecrets (required by GitOps)
+# Grants permissions to access specific secrets via name-prefix ARN patterns
 resource "aws_iam_policy" "secrets_manager" {
   count = local.persists_through_sleep && var.enable_secrets_manager_iam ? 1 : 0
 
   name        = "${var.cluster_name}-rosa-secretsmanager"
   path        = "/"
-  description = "IAM policy for External Secrets Operator to access AWS Secrets Manager (restricted to explicit secret ARNs)"
+  description = "IAM policy for External Secrets Operator to access AWS Secrets Manager (restricted to named secret ARN patterns)"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -61,7 +51,6 @@ resource "aws_iam_policy" "secrets_manager" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        # Restrict to explicit list of secret ARNs for maximum security
         Resource = local.all_secret_arns
       },
       {
@@ -70,7 +59,6 @@ resource "aws_iam_policy" "secrets_manager" {
           "secretsmanager:ListSecrets"
         ]
         # ListSecrets requires "*" but actual secret access is restricted above
-        # This allows GitOps to list secrets but only access those in the explicit ARN list
         Resource = "*"
       }
     ]

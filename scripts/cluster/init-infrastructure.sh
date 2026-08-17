@@ -16,9 +16,10 @@ if [ -z "$CLUSTER_NAME" ]; then
 fi
 
 get_cluster_dir "$CLUSTER_NAME" >/dev/null # Validate cluster exists
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
-info "Initializing infrastructure..."
+info "Initializing infrastructure (TF_DATA_DIR=${TF_DATA_DIR})..."
 
 cd "$TERRAFORM_INFRA_DIR"
 

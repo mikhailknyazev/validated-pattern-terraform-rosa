@@ -101,6 +101,7 @@ make cluster.egress-zero.bootstrap
 |-------|----------|
 | Prerequisites (account, full-stack, BYO) | [docs/prerequisites/index.md](docs/prerequisites/index.md) |
 | Enablement (three-repository pattern) | [docs/deployment/enablement.md](docs/deployment/enablement.md) |
+| Local multi-repo dev (Gitea + Argo) | [docs/guides/local-multi-repo-dev.md](docs/guides/local-multi-repo-dev.md) |
 | Cluster examples | [clusters/README.md](clusters/README.md) |
 | Module reference | [docs/modules/cluster.md](docs/modules/cluster.md) |
 | Validation scripts | [docs/operations/validation.md](docs/operations/validation.md) |
@@ -161,8 +162,16 @@ git clone https://github.com/terraform-redhat/terraform-provider-rhcs.git terraf
 # 4. OCM SDK - Go SDK for OCM API
 git clone https://github.com/openshift-online/ocm-sdk-go.git ocm-sdk-go
 
+# 5. GitOps cluster-config (Day 2 manifests — local dev loop)
+git clone https://github.com/rh-mobb/rosa-cluster-config.git rosa-cluster-config
+
+# 6. Helm charts (bootstrap + app-of-apps — local dev loop)
+git clone https://github.com/rh-mobb/validated-pattern-helm-charts.git validated-pattern-helm-charts
+
 cd ..
 ```
+
+**Local multi-repo development:** After cloning cluster-config and helm-charts under `reference/`, use `make cluster.<profile>.bootstrap-private` and `make dev.private.sync`. See [local-multi-repo-dev.md](docs/guides/local-multi-repo-dev.md).
 
 **Additional Reference Files:**
 

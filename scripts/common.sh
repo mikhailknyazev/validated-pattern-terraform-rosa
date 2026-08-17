@@ -57,6 +57,28 @@ get_terraform_dir() {
 	echo "$project_root/terraform"
 }
 
+# Per-cluster Terraform data dir (providers, modules, backend metadata).
+# State files stay in clusters/<name>/infrastructure.tfstate (or S3 key).
+# Setting TF_DATA_DIR enables concurrent init/plan/apply/destroy for different
+# clusters from one checkout — no git worktree required.
+# Call (and keep exported) before any terraform command for that cluster.
+use_cluster_tf_data_dir() {
+	local cluster_name="${1:-}"
+	if [ -z "$cluster_name" ]; then
+		error "Usage: use_cluster_tf_data_dir <cluster_name>"
+		exit 1
+	fi
+
+	local cluster_dir
+	cluster_dir=$(get_cluster_dir "$cluster_name")
+	export TF_DATA_DIR="${cluster_dir}/.terraform"
+}
+
+# True if this cluster has been terraform-init'd (TF_DATA_DIR must already be set).
+cluster_tf_initialized() {
+	[[ -n "${TF_DATA_DIR:-}" && -f "${TF_DATA_DIR}/terraform.tfstate" ]]
+}
+
 # Check for remote backend configuration
 check_backend_config() {
 	if [ -n "${TF_BACKEND_CONFIG_BUCKET:-}" ]; then

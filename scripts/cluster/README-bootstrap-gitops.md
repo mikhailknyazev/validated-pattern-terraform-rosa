@@ -9,6 +9,10 @@ This script bootstraps the OpenShift GitOps operator on a ROSA HCP cluster using
 - **Environment Variable Based**: All configuration via environment variables
 - **ACM Support**: Supports hub, spoke, and standalone cluster modes
 - **Short-lived bootstrap login**: Prefer `BOOTSTRAP_USERNAME` / `BOOTSTRAP_PASSWORD` / `CLUSTER_API_URL` from `bootstrap-admin.sh` (created by `make cluster.<name>.bootstrap`). Break-glass Secrets Manager credentials are optional and not used for primary hub/standalone bootstrap.
+- **Ephemeral kubeconfigs (#45)**: All `oc`/`helm` calls use process-local `KUBECONFIG` files under a `mktemp` directory (deleted on exit). The script does **not** write to `~/.kube/config` or `clusters/<name>/`, so concurrent bootstrap runs and other terminals cannot steal the context mid-flight.
+- **Spoke → hub login (interim)**: `ACM_MODE=spoke` requires `HUB_CREDENTIALS_SECRET` — the hub **break-glass admin** secret (`enable_cluster_admin = true` on the hub). Durable decoupling is tracked in [#48](https://github.com/rh-mobb/validated-pattern-terraform-rosa/issues/48).
+- **ACM readiness wait (#45)**: Before hub-registration, spoke bootstrap polls for ManagedCluster CRDs **and** `ocm-webhook` endpoints in `multicluster-engine`. CRDs can exist while the admission webhook still has no endpoints; applying registration too early fails.
+- **Platform metadata ConfigMap**: After GitOps install, publishes `openshift-gitops/rosa-platform-metadata` (`secretsManagerRoleArn`, account/region, optional BGP/cert-manager keys) so ESO and other charts bind IRSA without hardcoding account ARNs in cluster-config. See [platform-metadata-irsa.md](../../docs/architecture/platform-metadata-irsa.md).
 
 ## Prerequisites
 
@@ -32,6 +36,44 @@ This:
 2. Creates a short-lived HTPasswd bootstrap admin (`bootstrap-admin.sh create`)
 3. Runs this script with `BOOTSTRAP_*` env vars
 4. Always tears down the bootstrap admin afterward
+
+### Local multi-repo development (Gitea + Argo)
+
+For private-customer-style dev without pushing to GitHub/Pages:
+
+```bash
+make cluster.<name>.bootstrap-private
+make dev.private.sync DEV_CLUSTER_NAME=<name>
+```
+
+`bootstrap-private` runs this script with `--private`, which:
+
+1. Installs in-cluster Gitea (`private-gitea.sh install`; skips Helm upgrade when Gitea is already healthy)
+2. Seeds Git + Helm from `reference/` clones when present (bootstrap charts uploaded first; retries on Gitea HTTP 500)
+3. Uses port-forward (`127.0.0.1:13000`) for laptop Helm/repo operations (not in-cluster `cluster.local` URLs)
+4. Patches bootstrap values to Gitea URLs and syncs `targetRevision` from reference `Chart.yaml` when ahead of Terraform
+5. Installs `cluster-bootstrap` from local chart path when `--private` (Gitea index embeds unreachable internal URLs)
+6. Wires Argo CD to in-cluster Git/Helm URLs
+7. Writes `clusters/<name>/private-gitops.env` (gitignored)
+
+See [local-multi-repo-dev.md](../../docs/guides/local-multi-repo-dev.md).
+
+### Platform metadata only (optional escape hatch)
+
+Skip Argo/GitOps install but still publish `rosa-platform-metadata` (for `dev.public.apply-local`):
+
+```bash
+make cluster.<name>.bootstrap-skip-gitops
+```
+
+Equivalent to `bootstrap-gitops.sh --skip-gitops`.
+
+### CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `--private` | Install Gitea, seed from `reference/`, point Argo at in-cluster URLs |
+| `--skip-gitops` | Publish platform metadata only; skip Helm GitOps bootstrap |
 
 ### Standalone Execution
 
@@ -97,7 +139,7 @@ export BOOTSTRAP_VALUES_FILE="/path/to/clusters/my-cluster/cluster-bootstrap-val
 | Variable | Description | Default | Required When |
 |----------|-------------|---------|---------------|
 | `ACM_MODE` | ACM mode: `hub`, `spoke`, or `noacm` | `noacm` | Always |
-| `HUB_CREDENTIALS_SECRET` | Hub cluster credentials secret name | - | `ACM_MODE=spoke` |
+| `HUB_CREDENTIALS_SECRET` | Hub **break-glass** credentials secret name (`enable_cluster_admin=true` on hub; interim until #48) | - | `ACM_MODE=spoke` |
 | `ACM_REGION` | AWS region where ACM hub is located | - | `ACM_MODE=spoke` |
 
 ### Helm Chart Configuration
@@ -120,6 +162,10 @@ export BOOTSTRAP_VALUES_FILE="/path/to/clusters/my-cluster/cluster-bootstrap-val
 | `HELM_CHART_AWSPCA` | AWS Private CA Issuer chart name | `aws-privateca-issuer` |
 | `HELM_CHART_AWSPCA_VERSION` | AWS Private CA Issuer chart version | `1.6.1` |
 
+### App-of-apps chart pins (Terraform-rendered values)
+
+`targetRevision` for `app-of-apps-infrastructure`, `app-of-apps-application`, and `app-of-apps-acm-team-onboarding` are **not** `HELM_*` env vars. They are set in the cluster module ([`01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf)), rendered into `gitops_bootstrap_hub_values`, and written to `BOOTSTRAP_VALUES_FILE` by Make. Defaults: `app_of_apps_infrastructure_chart_version` `0.3.0`, `app_of_apps_application_chart_version` `1.5.8`, `app_of_apps_acm_team_onboarding_chart_version` `0.4.1`. Bump those variables when validated-pattern-helm-charts releases; see [AGENTS.md](../../AGENTS.md).
+
 See script source and Terraform outputs for additional optional variables.
 
 ## What the script does
@@ -130,16 +176,26 @@ See script source and Terraform outputs for additional optional variables.
 2. Waits for worker nodes to be Ready
 3. Installs the `cluster-bootstrap` Helm chart
 4. Waits for Argo CD instances
+5. Publishes `rosa-platform-metadata` ConfigMap (IRSA / account facts for GitOps)
+6. Optional AWS Private CA Issuer; storage class defaults
 
 ### ACM Spoke (`ACM_MODE=spoke`)
 
-1. Logs into spoke cluster
+1. Logs into spoke via ephemeral spoke kubeconfig
 2. Installs `cluster-bootstrap-acm-spoke` Helm chart on spoke
-3. Logs into hub cluster (`HUB_CREDENTIALS_SECRET`)
-4. Installs hub registration chart
-5. Retrieves ACM import manifests
-6. Applies ACM CRDs and import manifest to spoke
-7. Verifies ArgoCD integration
+3. Logs into hub via separate ephemeral hub kubeconfig (`HUB_CREDENTIALS_SECRET` break-glass admin)
+4. **Polls** for ACM CRDs and `ocm-webhook` endpoints on the hub (GitOps up ≠ ACM ready)
+5. Installs hub registration chart (if needed)
+6. **Polls** for `${CLUSTER_NAME}-import` secret keys; loads `crds`/`import` YAML into memory (no CWD files)
+7. Switches back to spoke kubeconfig, **asserts** API server is the spoke, applies manifests
+8. On hub: waits until `ManagedClusterJoined=True` (hard fail on timeout); soft-checks Argo CD cluster secret
+
+### Safe hub/spoke `oc` pattern
+
+- Bootstrap always sets `KUBECONFIG` to a temp file (`primary`, `hub`, or `spoke` under a `mktemp -d`).
+- Before idempotent skip/apply on the spoke, the script asserts `oc whoami --show-server` matches the spoke API URL from credentials.
+- Import YAML is kept in shell variables for the process lifetime — not written next to Terraform state.
+- Do not rely on `~/.kube/config` during bootstrap; use `make cluster.<name>.login` separately for interactive admin sessions.
 
 ## Cleanup
 
@@ -188,5 +244,8 @@ export BOOTSTRAP_VALUES_FILE="/path/to/cluster-bootstrap-values.yaml"
 ## Related
 
 - [Authentication](../../docs/getting-started/authentication.md) — break-glass vs bootstrap
+- [Local multi-repo dev](../../docs/guides/local-multi-repo-dev.md) — Gitea + Argo primary loop, optional `apply-local`
 - `scripts/cluster/bootstrap-admin.sh` — short-lived HTPasswd lifecycle
+- `scripts/cluster/private-gitea.sh` — in-cluster Gitea install
+- `scripts/dev/private-sync.sh` — push reference clones to Gitea
 - `modules/infrastructure/htpasswd-idp/` — shared IDP module

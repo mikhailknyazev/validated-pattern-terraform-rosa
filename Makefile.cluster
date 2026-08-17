@@ -15,6 +15,11 @@ SCRIPT_DIR := scripts
 TERRAFORM_DIR := terraform
 CLUSTER_DIR := clusters/$(CLUSTER_NAME)
 
+# Per-cluster Terraform data dir (providers, modules, backend metadata).
+# State stays in clusters/$(CLUSTER_NAME)/infrastructure.tfstate (or S3).
+# Enables concurrent init/plan/apply/destroy for different clusters from one checkout.
+export TF_DATA_DIR := $(abspath $(CLUSTER_DIR)/.terraform)
+
 # Check cluster exists
 check-cluster:
 	@$(SCRIPT_DIR)/utils/check-cluster.sh $(CLUSTER_NAME)
@@ -22,7 +27,7 @@ check-cluster:
 .PHONY: help init plan apply destroy destroy_force sleep fmt validate clean
 .PHONY: show-endpoints show-credentials show-timing login verify
 .PHONY: tunnel-start tunnel-stop tunnel-status bastion-connect
-.PHONY: vpn-config vpn-start vpn-stop vpn-status bootstrap bootstrap-spoke teardown-spoke ensure-tunnel
+.PHONY: vpn-config vpn-start vpn-stop vpn-status bootstrap bootstrap-private bootstrap-skip-gitops bootstrap-spoke teardown-spoke ensure-tunnel
 .PHONY: validate validate-terraform validate-account validate-network validate-prereqs
 
 help: ## Show this help message
@@ -48,6 +53,8 @@ help: ## Show this help message
 	echo ""; \
 	echo "$(GREEN)GitOps:$(NC)"; \
 	echo "  make cluster.$(CLUSTER_NAME).bootstrap         Bootstrap GitOps operator on cluster"; \
+	echo "  make cluster.$(CLUSTER_NAME).bootstrap-private Bootstrap GitOps with in-cluster Gitea (private GitOps plane)"; \
+	echo "  make cluster.$(CLUSTER_NAME).bootstrap-skip-gitops  Platform metadata only (no Argo; use with dev.public.apply-local)"; \
 	echo "  make cluster.$(CLUSTER_NAME).bootstrap-spoke   Bootstrap as ACM spoke (requires HUB_CREDENTIALS_SECRET, ACM_REGION)"; \
 	echo "  make cluster.$(CLUSTER_NAME).teardown-spoke    Teardown spoke from ACM hub (requires HUB_CREDENTIALS_SECRET, ACM_REGION)"; \
 	echo ""; \
@@ -153,6 +160,57 @@ bootstrap: init ensure-tunnel
 			exit "$$GITOPS_RC"; \
 		fi
 	@echo "$(GREEN)GitOps bootstrap completed for $(CLUSTER_NAME)$(NC)"
+
+# Private GitOps bootstrap — Gitea (Git + Helm packages) + Argo wired to in-cluster URLs
+bootstrap-private: init ensure-tunnel
+	@echo "$(BLUE)Bootstrapping private GitOps (Gitea) for $(CLUSTER_NAME)...$(NC)"
+	@cd $(TERRAFORM_DIR) && \
+		if ! terraform output -no-color gitops_bootstrap_enabled 2>/dev/null | grep -q "true"; then \
+			echo "$(YELLOW)Warning: GitOps bootstrap is not enabled for this cluster.$(NC)"; \
+			exit 1; \
+		fi && \
+		SCRIPT_PATH=$$(terraform output -no-color -raw gitops_bootstrap_script_path 2>/dev/null | tr -d '\n\r' | sed 's/[[:space:]]*$$//') && \
+		ACM_MODE=$$(terraform output -no-color -raw gitops_bootstrap_acm_mode 2>/dev/null | tr -d '\n\r') && \
+		VALUES_OUTPUT=$$([ "$$ACM_MODE" = "spoke" ] && echo "gitops_bootstrap_spoke_values" || echo "gitops_bootstrap_hub_values") && \
+		mkdir -p "../clusters/$(CLUSTER_NAME)" && \
+		terraform output -no-color -raw "$$VALUES_OUTPUT" > "../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
+		export BOOTSTRAP_VALUES_FILE="$$PWD/../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
+		export CLUSTER_PROFILE="$(CLUSTER_NAME)" && \
+		export BOOTSTRAP_PRIVATE=true && \
+		eval "$$(terraform output -no-color -raw gitops_bootstrap_env_exports 2>/dev/null)" && \
+		BOOTSTRAP_EXPORTS=$$(../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) create) || exit 1 && \
+		eval "$$BOOTSTRAP_EXPORTS" && \
+		set +e && \
+		bash "$$SCRIPT_PATH" --private; \
+		GITOPS_RC=$$?; \
+		set -e && \
+		../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) destroy || true && \
+		if [ "$$GITOPS_RC" -ne 0 ]; then exit "$$GITOPS_RC"; fi
+	@echo "$(GREEN)Private GitOps bootstrap completed for $(CLUSTER_NAME)$(NC)"
+	@echo "$(BLUE)Sync local changes: make dev.private.sync DEV_CLUSTER_NAME=$(CLUSTER_NAME)$(NC)"
+
+# Skip Argo cluster-bootstrap — publish platform metadata only (pairs with make dev.public.apply-local)
+bootstrap-skip-gitops: init ensure-tunnel
+	@echo "$(BLUE)Skip-gitops bootstrap (metadata only) for $(CLUSTER_NAME)...$(NC)"
+	@cd $(TERRAFORM_DIR) && \
+		SCRIPT_PATH=$$(terraform output -no-color -raw gitops_bootstrap_script_path 2>/dev/null | tr -d '\n\r' | sed 's/[[:space:]]*$$//') && \
+		mkdir -p "../clusters/$(CLUSTER_NAME)" && \
+		ACM_MODE=$$(terraform output -no-color -raw gitops_bootstrap_acm_mode 2>/dev/null | tr -d '\n\r') && \
+		VALUES_OUTPUT=$$([ "$$ACM_MODE" = "spoke" ] && echo "gitops_bootstrap_spoke_values" || echo "gitops_bootstrap_hub_values") && \
+		terraform output -no-color -raw "$$VALUES_OUTPUT" > "../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
+		export BOOTSTRAP_VALUES_FILE="$$PWD/../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
+		export CLUSTER_PROFILE="$(CLUSTER_NAME)" && \
+		export SKIP_GITOPS=true && \
+		eval "$$(terraform output -no-color -raw gitops_bootstrap_env_exports 2>/dev/null)" && \
+		BOOTSTRAP_EXPORTS=$$(../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) create) || exit 1 && \
+		eval "$$BOOTSTRAP_EXPORTS" && \
+		set +e && \
+		bash "$$SCRIPT_PATH" --skip-gitops; \
+		GITOPS_RC=$$?; \
+		set -e && \
+		../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) destroy || true && \
+		if [ "$$GITOPS_RC" -ne 0 ]; then exit "$$GITOPS_RC"; fi
+	@echo "$(GREEN)Skip-gitops bootstrap completed for $(CLUSTER_NAME)$(NC)"
 
 # GitOps spoke bootstrap - registers cluster with ACM hub
 # Requires: HUB_CREDENTIALS_SECRET and ACM_REGION passed on the command line
@@ -347,7 +405,7 @@ validate-network: check-cluster ## Validate VPC for BYO or Terraform-managed net
 		[[ "$$MULTI" == "true" ]] && ARGS="$$ARGS --multi-az" || ARGS="$$ARGS --single-az"; \
 		if [[ -n "$$VPC_ID" ]]; then \
 			ARGS="$$ARGS --vpc-id $$VPC_ID"; \
-		elif [ -d "$(TERRAFORM_DIR)/.terraform" ]; then \
+		elif [ -f "$(TF_DATA_DIR)/terraform.tfstate" ]; then \
 			TF_VPC=$$(cd $(TERRAFORM_DIR) && terraform output -raw vpc_id 2>/dev/null || true); \
 			[[ -n "$$TF_VPC" && "$$TF_VPC" != "null" ]] && ARGS="$$ARGS --vpc-id $$TF_VPC"; \
 		fi; \

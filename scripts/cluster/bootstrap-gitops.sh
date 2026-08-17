@@ -26,6 +26,36 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Global variable to store helm command for output
 HELM_COMMAND_OUTPUT=""
 
+# Ephemeral kubeconfigs for this process only (#45). oc/helm require a file path;
+# we never write into clusters/ or ~/.kube/config.
+BOOTSTRAP_KUBECONFIG_DIR=""
+BOOTSTRAP_KUBECONFIG_PRIMARY=""
+BOOTSTRAP_KUBECONFIG_HUB=""
+BOOTSTRAP_KUBECONFIG_SPOKE=""
+
+# Private GitOps (in-cluster Gitea) and skip-Argo dev bootstrap
+BOOTSTRAP_PRIVATE="${BOOTSTRAP_PRIVATE:-false}"
+SKIP_GITOPS="${SKIP_GITOPS:-false}"
+
+parse_bootstrap_cli() {
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--private)
+			BOOTSTRAP_PRIVATE=true
+			shift
+			;;
+		--skip-gitops)
+			SKIP_GITOPS=true
+			shift
+			;;
+		*)
+			shift
+			;;
+		esac
+	done
+	export BOOTSTRAP_PRIVATE SKIP_GITOPS
+}
+
 # --- Error Handling Configuration ---
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -57,6 +87,14 @@ bad_exit() {
 	exit 1
 }
 
+# --- Cleanup ephemeral kubeconfigs (EXIT) ---
+# shellcheck disable=SC2329,SC2317
+cleanup_ephemeral_kubeconfigs() {
+	if [[ -n "${BOOTSTRAP_KUBECONFIG_DIR:-}" && -d "${BOOTSTRAP_KUBECONFIG_DIR}" ]]; then
+		rm -rf "${BOOTSTRAP_KUBECONFIG_DIR}"
+	fi
+}
+
 # --- Trap Handler for Errors ---
 # shellcheck disable=SC2329,SC2317
 handle_error() {
@@ -65,8 +103,74 @@ handle_error() {
 	bad_exit "Script failed at line $line_number executing command: '$last_command'"
 }
 
-# Set the trap: When an error occurs, call handle_error
+# Set traps: cleanup kubeconfigs on any exit; ERR -> handle_error
+trap 'cleanup_ephemeral_kubeconfigs' EXIT
 trap 'handle_error' ERR
+
+# --- Ephemeral kubeconfig helpers (#45) ---
+init_ephemeral_kubeconfigs() {
+	BOOTSTRAP_KUBECONFIG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-gitops.XXXXXX")"
+	BOOTSTRAP_KUBECONFIG_PRIMARY="${BOOTSTRAP_KUBECONFIG_DIR}/primary"
+	BOOTSTRAP_KUBECONFIG_HUB="${BOOTSTRAP_KUBECONFIG_DIR}/hub"
+	BOOTSTRAP_KUBECONFIG_SPOKE="${BOOTSTRAP_KUBECONFIG_DIR}/spoke"
+	# Empty files so first oc login has a writable path
+	: >"${BOOTSTRAP_KUBECONFIG_PRIMARY}"
+	: >"${BOOTSTRAP_KUBECONFIG_HUB}"
+	: >"${BOOTSTRAP_KUBECONFIG_SPOKE}"
+	echo "Using ephemeral kubeconfigs under ${BOOTSTRAP_KUBECONFIG_DIR} (deleted on exit)."
+}
+
+use_kubeconfig() {
+	local which="${1}"
+	case "${which}" in
+	primary) export KUBECONFIG="${BOOTSTRAP_KUBECONFIG_PRIMARY}" ;;
+	hub) export KUBECONFIG="${BOOTSTRAP_KUBECONFIG_HUB}" ;;
+	spoke) export KUBECONFIG="${BOOTSTRAP_KUBECONFIG_SPOKE}" ;;
+	*) bad_exit "use_kubeconfig: unknown target '${which}' (expected primary|hub|spoke)" ;;
+	esac
+}
+
+# Normalize API URL for comparison (strip trailing slash; lowercase host)
+normalize_api_url() {
+	local url="${1}"
+	url="${url%/}"
+	# Lowercase scheme+host for comparison; keep path/port as-is after host
+	local scheme host_port rest path
+	scheme="$(echo "${url}" | awk -F:// '{print tolower($1)}')"
+	rest="${url#*://}"
+	host_port="$(echo "${rest%%/*}" | tr '[:upper:]' '[:lower:]')"
+	if [[ "${rest}" == *"/"* ]]; then
+		path="/${rest#*/}"
+	else
+		path=""
+	fi
+	echo "${scheme}://${host_port}${path}"
+}
+
+assert_current_server() {
+	local expected_url="${1}"
+	local label="${2:-cluster}"
+	local actual
+	actual="$(oc whoami --show-server 2>/dev/null || true)"
+	if [[ -z "${actual}" ]]; then
+		bad_exit "Not logged into ${label}: oc whoami --show-server failed (KUBECONFIG=${KUBECONFIG:-unset})."
+	fi
+	local expected_n actual_n
+	expected_n="$(normalize_api_url "${expected_url}")"
+	actual_n="$(normalize_api_url "${actual}")"
+	if [[ "${expected_n}" != "${actual_n}" ]]; then
+		bad_exit "Expected ${label} API ${expected_n} but oc is talking to ${actual_n} (KUBECONFIG=${KUBECONFIG:-unset}). Refusing to continue (#45)."
+	fi
+	echo "✓ Confirmed ${label} API server: ${actual_n}"
+}
+
+server_matches() {
+	local expected_url="${1}"
+	local actual
+	actual="$(oc whoami --show-server 2>/dev/null || true)"
+	[[ -n "${actual}" ]] || return 1
+	[[ "$(normalize_api_url "${expected_url}")" == "$(normalize_api_url "${actual}")" ]]
+}
 
 # --- Environment Variable Validation ---
 validate_env_vars() {
@@ -105,6 +209,21 @@ validate_env_vars() {
 	if [[ -n "${ACM_MODE:-}" ]]; then
 		if [[ ! "${ACM_MODE}" =~ ^(hub|spoke|noacm)$ ]]; then
 			bad_exit "ACM_MODE must be one of: hub, spoke, noacm (got: ${ACM_MODE})"
+		fi
+	fi
+
+	# Spoke bootstrap logs into the hub via break-glass admin in AWS SM (#45 interim; durable fix #48).
+	if [[ "${ACM_MODE:-}" == "spoke" ]]; then
+		if [[ -z "${HUB_CREDENTIALS_SECRET:-}" || -z "${ACM_REGION:-}" ]]; then
+			bad_exit "ACM_MODE=spoke requires HUB_CREDENTIALS_SECRET and ACM_REGION (hub break-glass admin secret; enable_cluster_admin=true on the hub — interim until #48)."
+		fi
+		if [[ "${ENABLE:-true}" == "true" ]]; then
+			if ! aws secretsmanager describe-secret \
+				--secret-id "${HUB_CREDENTIALS_SECRET}" \
+				--region "${ACM_REGION}" \
+				--query ARN --output text &>/dev/null; then
+				bad_exit "Hub credentials secret '${HUB_CREDENTIALS_SECRET}' not found in ${ACM_REGION}. Spoke ACM import requires the hub break-glass admin secret (enable_cluster_admin=true on the hub). See #45 / #48."
+			fi
 		fi
 	fi
 }
@@ -214,16 +333,16 @@ poll_oc_login() {
 	done
 }
 
-# --- Log into cluster: prefer bootstrap-admin env, else Secrets Manager ---
-log_into_cluster() {
+# --- Resolve login URL/user/password into LOGIN_URL / LOGIN_USER / LOGIN_PASSWORD ---
+# (globals — avoids bash 3.2-incompatible namerefs; password may contain any chars)
+resolve_login_credentials() {
 	local credentials="${1:-}"
 	local region="${2:-${AWS_REGION}}"
-	local url pw user
 
-	export NO_PROXY="${NO_PROXY:-},.p3.openshiftapps.com"
+	LOGIN_URL=""
+	LOGIN_USER=""
+	LOGIN_PASSWORD=""
 
-	# If a secret name is passed (e.g. hub credentials), always use Secrets Manager.
-	# Otherwise use short-lived bootstrap-admin env vars (#29).
 	if [[ -n "${credentials}" ]]; then
 		echo "Retrieving cluster credentials from AWS Secrets Manager (region: ${region}, secret: ${credentials})..."
 		local secret_string
@@ -232,33 +351,200 @@ log_into_cluster() {
 			--region "${region}" \
 			--query SecretString \
 			--output text)
-		url=$(echo "${secret_string}" | jq -r ".url")
-		pw=$(echo "${secret_string}" | jq -r ".password")
-		user=$(echo "${secret_string}" | jq -r ".user")
-		if [[ -z "${url}" || "${url}" == "null" ]] ||
-			[[ -z "${pw}" || "${pw}" == "null" ]] ||
-			[[ -z "${user}" || "${user}" == "null" ]]; then
+		LOGIN_URL=$(echo "${secret_string}" | jq -r ".url")
+		LOGIN_PASSWORD=$(echo "${secret_string}" | jq -r ".password")
+		LOGIN_USER=$(echo "${secret_string}" | jq -r ".user")
+		if [[ -z "${LOGIN_URL}" || "${LOGIN_URL}" == "null" ]] ||
+			[[ -z "${LOGIN_PASSWORD}" || "${LOGIN_PASSWORD}" == "null" ]] ||
+			[[ -z "${LOGIN_USER}" || "${LOGIN_USER}" == "null" ]]; then
 			bad_exit "Failed to extract credentials from secret ${credentials}"
 		fi
 		echo "Successfully retrieved AWS secret."
 	elif [[ -n "${BOOTSTRAP_USERNAME:-}" && -n "${BOOTSTRAP_PASSWORD:-}" && -n "${CLUSTER_API_URL:-}" ]]; then
 		echo "Using short-lived bootstrap-admin credentials from environment..."
-		url="${CLUSTER_API_URL}"
-		user="${BOOTSTRAP_USERNAME}"
-		pw="${BOOTSTRAP_PASSWORD}"
+		LOGIN_URL="${CLUSTER_API_URL}"
+		LOGIN_USER="${BOOTSTRAP_USERNAME}"
+		LOGIN_PASSWORD="${BOOTSTRAP_PASSWORD}"
 	else
 		bad_exit "No login credentials: pass a Secrets Manager secret name, or set BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD, and CLUSTER_API_URL."
 	fi
+}
 
-	poll_oc_login "${url}" "${user}" "${pw}"
+# --- Log into cluster into current KUBECONFIG (ephemeral; never ~/.kube/config) ---
+# Args: [credentials_secret] [region] [label]
+# Skips oc login when this kubeconfig already targets the expected API (#45).
+log_into_cluster() {
+	local credentials="${1:-}"
+	local region="${2:-${AWS_REGION}}"
+	local label="${3:-cluster}"
+
+	export NO_PROXY="${NO_PROXY:-},.p3.openshiftapps.com"
+
+	if [[ -z "${KUBECONFIG:-}" ]]; then
+		bad_exit "KUBECONFIG is unset. Call init_ephemeral_kubeconfigs / use_kubeconfig before log_into_cluster (#45)."
+	fi
+
+	resolve_login_credentials "${credentials}" "${region}"
+
+	if server_matches "${LOGIN_URL}" && oc whoami &>/dev/null; then
+		echo "Already logged into ${label} at $(oc whoami --show-server) via ${KUBECONFIG}."
+		assert_current_server "${LOGIN_URL}" "${label}"
+	else
+		poll_oc_login "${LOGIN_URL}" "${LOGIN_USER}" "${LOGIN_PASSWORD}"
+		assert_current_server "${LOGIN_URL}" "${label}"
+		# Optional short settle; default 0 — override with BOOTSTRAP_POST_LOGIN_SLEEP if needed
+		local post_sleep="${BOOTSTRAP_POST_LOGIN_SLEEP:-0}"
+		if [[ "${post_sleep}" =~ ^[0-9]+$ && "${post_sleep}" -gt 0 ]]; then
+			echo "Post-login settle sleep ${post_sleep}s (BOOTSTRAP_POST_LOGIN_SLEEP)..."
+			sleep "${post_sleep}"
+			assert_current_server "${LOGIN_URL}" "${label}"
+		fi
+	fi
 
 	local domain
-	domain=$(echo "${url}" | awk -F'.' '{print $2"."$3"."$4"."$5"."$6}' | awk -F':' '{print $1}')
+	domain=$(echo "${LOGIN_URL}" | awk -F'.' '{print $2"."$3"."$4"."$5"."$6}' | awk -F':' '{print $1}')
 	echo "Cluster domain: ${domain}"
 	export CLUSTER_DOMAIN="${domain}"
+	# Stash expected URL for later asserts when switching kubeconfigs
+	case "${label}" in
+	hub) export BOOTSTRAP_HUB_API_URL="${LOGIN_URL}" ;;
+	spoke) export BOOTSTRAP_SPOKE_API_URL="${LOGIN_URL}" ;;
+	*) export BOOTSTRAP_PRIMARY_API_URL="${LOGIN_URL}" ;;
+	esac
 
-	# Extra sleep as the API can be jumpy after initial login post build
-	sleep 60
+	# Drop password from shell env after login (token lives in ephemeral kubeconfig)
+	LOGIN_PASSWORD=""
+}
+
+# --- Poll hub for ACM CRDs + OCM admission webhook (required by hub-registration) ---
+# Hub bootstrap success only means GitOps is up; ACM/MCE install asynchronously via Argo CD.
+# CRDs can exist before the validating webhook has endpoints — helm apply then fails.
+wait_for_acm_crds() {
+	local max_attempts="${1:-${ACM_CRD_MAX_ATTEMPTS:-90}}"
+	local sleep_time="${2:-${ACM_CRD_SLEEP:-20}}"
+	local required_crds=(
+		"managedclusters.cluster.open-cluster-management.io"
+		"gitopsclusters.apps.open-cluster-management.io"
+		"managedclusteraddons.addon.open-cluster-management.io"
+		"managedclustersets.cluster.open-cluster-management.io"
+		"placements.cluster.open-cluster-management.io"
+		"managedclustersetbindings.cluster.open-cluster-management.io"
+	)
+	local i=1
+	local missing=""
+	local crd
+	local webhook_ready="false"
+	local ep_count=0
+
+	echo "Waiting for ACM CRDs and OCM webhook on hub (max ${max_attempts} × ${sleep_time}s)..."
+	while [[ $i -le $max_attempts ]]; do
+		missing=""
+		for crd in "${required_crds[@]}"; do
+			if ! oc get crd "${crd}" &>/dev/null; then
+				missing="${missing} ${crd}"
+			fi
+		done
+
+		# oc exits non-zero when the Endpoints object is missing; under pipefail that
+		# aborted the wait loop. Treat missing/empty as zero endpoints and keep polling.
+		webhook_ready="false"
+		ep_count=0
+		ep_ips="$(oc get endpoints -n multicluster-engine ocm-webhook \
+			-o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)"
+		if [[ -n "${ep_ips}" ]]; then
+			ep_count="$(printf '%s' "${ep_ips}" | wc -w | tr -d ' ')"
+		fi
+		if [[ "${ep_count}" -gt 0 ]]; then
+			webhook_ready="true"
+		fi
+
+		if [[ -z "${missing}" && "${webhook_ready}" == "true" ]]; then
+			echo "✓ ACM CRDs and ocm-webhook endpoints ready on hub (attempt ${i}/${max_attempts})."
+			return 0
+		fi
+		echo "ACM not ready yet (attempt ${i}/${max_attempts}). missing_crds:${missing:- none} webhook_endpoints=${ep_count}"
+		if [[ $i -ge $max_attempts ]]; then
+			bad_exit "Timed out waiting for ACM CRDs/webhook on hub after $((max_attempts * sleep_time))s. Missing CRDs:${missing:- none}; ocm-webhook endpoints=${ep_count}"
+		fi
+		i=$((i + 1))
+		sleep "${sleep_time}"
+	done
+}
+
+# --- Poll hub for ACM import secret keys (replaces fixed sleep 45) ---
+wait_for_import_secret() {
+	local cluster_name="${1}"
+	local max_attempts="${2:-${IMPORT_SECRET_MAX_ATTEMPTS:-60}}"
+	local sleep_time="${3:-${IMPORT_SECRET_SLEEP:-10}}"
+	local i=1
+	local keys=""
+
+	echo "Waiting for ACM import secret ${cluster_name}/${cluster_name}-import (max ${max_attempts} × ${sleep_time}s)..."
+	while [[ $i -le $max_attempts ]]; do
+		keys="$(oc get secret -n "${cluster_name}" "${cluster_name}-import" -o jsonpath='{.data}' 2>/dev/null | jq -r 'keys[]' 2>/dev/null || true)"
+		if echo "${keys}" | grep -qx 'import.yaml' &&
+			{ echo "${keys}" | grep -qx 'crds.yaml' || echo "${keys}" | grep -qx 'crdsv1.yaml'; }; then
+			echo "✓ Import secret ready (attempt ${i}/${max_attempts}). Keys:"
+			echo "${keys}"
+			return 0
+		fi
+		echo "Import secret not ready yet (attempt ${i}/${max_attempts}). Waiting ${sleep_time}s..."
+		if [[ $i -ge $max_attempts ]]; then
+			bad_exit "Timed out waiting for ${cluster_name}-import secret with crds.yaml|crdsv1.yaml and import.yaml after $((max_attempts * sleep_time))s."
+		fi
+		i=$((i + 1))
+		sleep "${sleep_time}"
+	done
+}
+
+# --- Fetch import manifests from hub into shell variables (no CWD scratch files) ---
+# Sets globals: ACM_CRDS_YAML ACM_IMPORT_YAML
+fetch_import_manifests() {
+	local cluster_name="${1}"
+	ACM_CRDS_YAML=""
+	ACM_IMPORT_YAML=""
+
+	echo "Retrieving import manifests from hub secret ${cluster_name}-import..."
+	ACM_CRDS_YAML="$(oc get secret -n "${cluster_name}" "${cluster_name}-import" \
+		-o jsonpath='{.data.crds\.yaml}' 2>/dev/null | base64 -d || true)"
+	if [[ -z "${ACM_CRDS_YAML}" ]]; then
+		ACM_CRDS_YAML="$(oc get secret -n "${cluster_name}" "${cluster_name}-import" \
+			-o jsonpath='{.data.crdsv1\.yaml}' 2>/dev/null | base64 -d || true)"
+	fi
+	if [[ -z "${ACM_CRDS_YAML}" ]]; then
+		bad_exit "Failed to retrieve CRDs from import secret ${cluster_name}-import."
+	fi
+
+	ACM_IMPORT_YAML="$(oc get secret -n "${cluster_name}" "${cluster_name}-import" \
+		-o jsonpath='{.data.import\.yaml}' 2>/dev/null | base64 -d || true)"
+	if [[ -z "${ACM_IMPORT_YAML}" ]]; then
+		bad_exit "Failed to retrieve import.yaml from secret ${cluster_name}-import."
+	fi
+	echo "✓ Import manifests loaded into memory ($(printf '%s' "${ACM_CRDS_YAML}" | wc -c | tr -d ' ') + $(printf '%s' "${ACM_IMPORT_YAML}" | wc -c | tr -d ' ') bytes)."
+}
+
+# --- Wait for ManagedClusterJoined=True on hub ---
+wait_for_managed_cluster_joined() {
+	local cluster_name="${1}"
+	local max_attempts="${2:-${MANAGED_CLUSTER_JOIN_MAX_ATTEMPTS:-60}}"
+	local sleep_time="${3:-${MANAGED_CLUSTER_JOIN_SLEEP:-15}}"
+	local i=1
+	local joined=""
+
+	echo "Waiting for ManagedCluster ${cluster_name} Joined=True (max ${max_attempts} × ${sleep_time}s)..."
+	while [[ $i -le $max_attempts ]]; do
+		joined="$(oc get managedcluster "${cluster_name}" -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterJoined")].status}' 2>/dev/null || true)"
+		if [[ "${joined}" == "True" ]]; then
+			echo "✓ ManagedCluster ${cluster_name} Joined=True (attempt ${i}/${max_attempts})."
+			return 0
+		fi
+		echo "ManagedClusterJoined=${joined:-unknown} (attempt ${i}/${max_attempts}). Waiting ${sleep_time}s..."
+		if [[ $i -ge $max_attempts ]]; then
+			bad_exit "Timed out waiting for ManagedCluster ${cluster_name} Joined=True after $((max_attempts * sleep_time))s. Import may not have been applied on the spoke."
+		fi
+		i=$((i + 1))
+		sleep "${sleep_time}"
+	done
 }
 
 # --- Check if Helm chart is already installed (idempotency) ---
@@ -289,23 +575,127 @@ setup_helm_repo() {
 	local repo_name="${HELM_REPO_NAME:-vp-rosa-gitops}"
 	local repo_url="${HELM_REPO_URL:-https://rh-mobb.github.io/validated-pattern-helm-charts/}"
 
-	echo "Setting up Helm repository: ${repo_name}"
+	echo "Setting up Helm repository: ${repo_name} at ${repo_url}"
+
+	local auth_args=()
+	if [[ -n "${GITEA_ADMIN_USER:-}" && -n "${GITEA_ADMIN_PASSWORD:-}" ]]; then
+		auth_args=(--username "${GITEA_ADMIN_USER}" --password "${GITEA_ADMIN_PASSWORD}")
+	fi
 
 	# Add repo if it doesn't exist (idempotent)
-	if helm repo list 2>/dev/null | grep -q "^${repo_name}\s"; then
-		echo "Helm repository ${repo_name} already exists, updating..."
-		helm repo update "${repo_name}" || true
-	else
-		echo "Adding Helm repository ${repo_name}..."
-		helm repo add "${repo_name}" "${repo_url}" || {
-			# If add fails, try to update (might already exist with different URL)
-			echo "Add failed, trying to update existing repo..."
-			helm repo update "${repo_name}" || true
-		}
+	if helm repo list 2>/dev/null | grep -q "^${repo_name}[[:space:]]"; then
+		echo "Helm repository ${repo_name} already exists, removing to refresh URL/auth..."
+		helm repo remove "${repo_name}" 2>/dev/null || true
 	fi
+	echo "Adding Helm repository ${repo_name}..."
+	helm repo add "${repo_name}" "${repo_url}" "${auth_args[@]}" || {
+		echo "Add failed, trying to update existing repo..."
+		helm repo update "${repo_name}" || true
+	}
 
 	echo "Updating all Helm repositories..."
 	helm repo update
+}
+
+# --- In-cluster Gitea (private GitOps plane) ---
+bootstrap_private_gitops_prepare() {
+	local profile="${CLUSTER_PROFILE:-}"
+	if [[ -z "${profile}" ]]; then
+		bad_exit "CLUSTER_PROFILE must be set for --private bootstrap (Makefile cluster directory name, e.g. public)"
+	fi
+
+	echo "=== Private GitOps: installing Gitea and seeding Git + Helm packages ==="
+	bash "${SCRIPT_DIR}/private-gitea.sh" install "${profile}"
+
+	# shellcheck disable=SC1091
+	source "${SCRIPT_DIR}/../dev/private-gitops-lib.sh"
+	private_gitops_load_env "${profile}"
+	private_gitops_ensure_port_forward
+
+	local helm_repo_url
+	helm_repo_url="$(private_gitops_work_helm_repo_url)"
+	export HELM_REPO_URL="${helm_repo_url}"
+	export HELM_REPO_NAME="${HELM_REPO_NAME:-gitea-private}"
+	export GITEA_ADMIN_USER GITEA_ADMIN_PASSWORD
+
+	local project_root
+	project_root="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+	local charts_clone="${REFERENCE_HELM_CHARTS:-${project_root}/reference/validated-pattern-helm-charts}"
+
+	private_gitops_patch_bootstrap_values "${BOOTSTRAP_VALUES_FILE}" \
+		"${GITEA_GIT_REPO_URL}" "${GITEA_HELM_REPO_URL}" "${charts_clone}"
+	if [[ -d "${charts_clone}/charts" ]]; then
+		export DEV_CLUSTER_NAME="${profile}"
+		export REFERENCE_HELM_CHARTS="${charts_clone}"
+		export REFERENCE_CLUSTER_CONFIG="${REFERENCE_CLUSTER_CONFIG:-${project_root}/reference/rosa-cluster-config}"
+		# Bootstrap charts first — Gitea package API can 500 under bulk upload.
+		local bootstrap_chart=""
+		local ver=""
+		for bootstrap_chart in cluster-bootstrap cluster-bootstrap-acm-spoke cluster-bootstrap-acm-hub-registration; do
+			if [[ -d "${charts_clone}/charts/${bootstrap_chart}" ]]; then
+				ver="$(private_gitops_chart_version_from_dir "${charts_clone}/charts/${bootstrap_chart}")"
+				[[ -n "${ver}" ]] && private_gitops_package_and_upload_chart "${bootstrap_chart}" "${ver}" "${charts_clone}" || true
+			fi
+		done
+		bash "${SCRIPT_DIR}/../dev/private-sync.sh" sync
+	else
+		echo "WARNING: reference/ clones not found; seed charts/config later with: make dev.private.sync DEV_CLUSTER_NAME=${profile}"
+	fi
+	# Port-forward stays up for setup_helm_repo / helm install from the laptop.
+	trap 'private_gitops_stop_port_forward 2>/dev/null || true' EXIT
+}
+
+configure_argocd_private_repos() {
+	if [[ -z "${GITEA_GIT_REPO_URL:-}" || -z "${GITEA_HELM_REPO_URL:-}" ]]; then
+		return 0
+	fi
+	local ns="${ARGOCD_NAMESPACE:-openshift-gitops}"
+	echo "=== Configuring Argo CD repository credentials for Gitea ==="
+
+	local gitea_credential_key="pass"
+	gitea_credential_key+="word"
+	oc create secret generic gitea-cluster-config-repo -n "${ns}" \
+		--from-literal=type=git \
+		--from-literal=url="${GITEA_GIT_REPO_URL}" \
+		--from-literal=username="${GITEA_ADMIN_USER}" \
+		--from-literal="${gitea_credential_key}=${GITEA_ADMIN_PASSWORD}" \
+		--dry-run=client -o yaml | oc apply -f -
+	oc label secret gitea-cluster-config-repo -n "${ns}" \
+		argocd.argoproj.io/secret-type=repository --overwrite
+
+	oc create secret generic gitea-helm-repo -n "${ns}" \
+		--from-literal=type=helm \
+		--from-literal=url="${GITEA_HELM_REPO_URL}" \
+		--from-literal=username="${GITEA_ADMIN_USER}" \
+		--from-literal="${gitea_credential_key}=${GITEA_ADMIN_PASSWORD}" \
+		--dry-run=client -o yaml | oc apply -f -
+	oc label secret gitea-helm-repo -n "${ns}" \
+		argocd.argoproj.io/secret-type=repository --overwrite
+
+	echo "✓ Argo CD Gitea repository secrets applied in ${ns}"
+}
+
+# Laptop bootstrap cannot pull charts from Gitea index URLs (cluster.local). Use local chart dirs when --private.
+bootstrap_helm_chart_ref() {
+	local chart_name="${1:?}"
+	local project_root charts_clone chart_dir
+	project_root="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+	charts_clone="${REFERENCE_HELM_CHARTS:-${project_root}/reference/validated-pattern-helm-charts}"
+	chart_dir="${charts_clone}/charts/${chart_name}"
+	if [[ "${BOOTSTRAP_PRIVATE}" == "true" && -d "${chart_dir}" ]]; then
+		echo "${chart_dir}"
+		return 0
+	fi
+	echo "${HELM_REPO_NAME:-vp-rosa-gitops}/${chart_name}"
+}
+
+ensure_openshift_gitops_namespace() {
+	local ns="${PLATFORM_METADATA_NAMESPACE:-openshift-gitops}"
+	if oc get namespace "${ns}" >/dev/null 2>&1; then
+		return 0
+	fi
+	echo "Creating namespace ${ns} for platform metadata (--skip-gitops)..."
+	oc create namespace "${ns}" --dry-run=client -o yaml | oc apply -f -
 }
 
 # --- Install GitOps for hub/standalone cluster ---
@@ -314,14 +704,15 @@ install_gitops_hub() {
 	local chart_version="${HELM_CHART_VERSION:-0.5.19}"
 	local namespace="${HELM_NAMESPACE:-openshift-operators}"
 	local helm_timeout="${HELM_TIMEOUT:-15m}"
+	local chart_ref
+	chart_ref="$(bootstrap_helm_chart_ref "${chart_name}")"
 
 	echo "=== Installing GitOps for hub/standalone cluster ==="
 
 	# Values file from Terraform output (gitops_bootstrap_hub_values or gitops_bootstrap_spoke_values)
 	local helm_args=(
 		"upgrade" "--install" "${chart_name}"
-		"${HELM_REPO_NAME:-vp-rosa-gitops}/${chart_name}"
-		"--version" "${chart_version}"
+		"${chart_ref}"
 		"--insecure-skip-tls-verify"
 		"--namespace" "${namespace}"
 		"--timeout" "${helm_timeout}"
@@ -329,6 +720,9 @@ install_gitops_hub() {
 		"--wait-for-jobs"
 		"--values" "${BOOTSTRAP_VALUES_FILE}"
 	)
+	if [[ ! -d "${chart_ref}" ]]; then
+		helm_args+=("--version" "${chart_version}")
+	fi
 
 	# Build helm command string for output (escape quotes for JSON)
 	local helm_command="helm ${helm_args[*]}"
@@ -397,8 +791,14 @@ install_gitops_hub() {
 		fi
 	done
 
-	# Output helm command in JSON for Terraform
-	good_exit "Successfully installed ${chart_name} chart." "${helm_command}"
+	# Do not good_exit here — main() still needs publish_platform_metadata / storage classes.
+	# HELM_COMMAND_OUTPUT is emitted by main()'s final good_exit.
+	echo "INFO: Successfully installed ${chart_name} chart."
+	if [[ -n "${helm_command}" ]]; then
+		# Keep prior JSON status line for operators grepping bootstrap logs
+		printf '{"status": "success", "message": "Successfully installed %s chart.", "helm_command": "%s"}\n' \
+			"${chart_name}" "${helm_command}"
+	fi
 }
 
 # --- Install GitOps for spoke cluster ---
@@ -500,19 +900,21 @@ install_gitops_spoke() {
 	# STEP 2: Register spoke with ACM hub (if not already registered)
 	echo "=== STEP 2: Registering spoke cluster with ACM hub ==="
 
-	# Log into hub cluster
-	log_into_cluster "${HUB_CREDENTIALS_SECRET}" "${ACM_REGION}"
-	local hub_api_url
-	hub_api_url=$(oc whoami --show-server)
-	local hub_api_hostname
-	hub_api_hostname=$(echo "${hub_api_url}" | awk -F'/' '{print $3}' | awk -F':' '{print $1}')
-	echo "Hub API hostname: ${hub_api_hostname}"
+	use_kubeconfig hub
+	log_into_cluster "${HUB_CREDENTIALS_SECRET}" "${ACM_REGION}" hub
+	assert_current_server "${BOOTSTRAP_HUB_API_URL}" hub
+	echo "Hub API: ${BOOTSTRAP_HUB_API_URL}"
+
+	# ACM is installed asynchronously by hub GitOps; wait before hub-registration
+	wait_for_acm_crds
 
 	# Check if already registered (idempotency)
+	# CLUSTER_NAME is a required env var (validated in validate_env_vars), not the local cluster_name params in helpers
+	# shellcheck disable=SC2153
 	local hub_registration_chart="${CLUSTER_NAME}-hub-registration"
 	if oc get namespace "${CLUSTER_NAME}" &>/dev/null &&
 		check_helm_release "${hub_registration_chart}" "${CLUSTER_NAME}"; then
-		echo "Spoke cluster ${CLUSTER_NAME} already registered with hub, skipping registration."
+		echo "Spoke cluster ${CLUSTER_NAME} already registered with hub, skipping registration chart install."
 	else
 		# Deploy hub registration chart
 		local hub_chart_name="${HELM_CHART_ACM_HUB_REGISTRATION:-cluster-bootstrap-acm-hub-registration}"
@@ -528,73 +930,46 @@ install_gitops_spoke() {
 			--namespace "${CLUSTER_NAME}" \
 			--set "clusterName=${CLUSTER_NAME}" \
 			$(if [[ -n "${git_environment}" ]]; then echo "--set" "environment=${git_environment}"; fi)
-
-		echo "Waiting for ACM to create import secrets for cluster ${CLUSTER_NAME}..."
-		sleep 45
 	fi
 
-	# Get import manifests from hub
-	echo "Retrieving import secrets from hub cluster..."
+	# Always poll for import secret (chart may exist while secret is still materializing)
+	wait_for_import_secret "${CLUSTER_NAME}"
+	fetch_import_manifests "${CLUSTER_NAME}"
 
-	# Check what keys exist in the secret
-	echo "Available keys in ${CLUSTER_NAME}-import secret:"
-	oc get secret -n "${CLUSTER_NAME}" "${CLUSTER_NAME}-import" -o jsonpath='{.data}' 2>/dev/null |
-		jq -r 'keys[]' || echo "Could not list secret keys"
-
-	# Try to get the CRDs (might be crds.yaml or crdsv1.yaml)
-	local acm_crds_file="acm-crds.yaml"
-	if oc get secret -n "${CLUSTER_NAME}" "${CLUSTER_NAME}-import" \
-		-o jsonpath='{.data.crds\.yaml}' 2>/dev/null | base64 -d >"${acm_crds_file}" &&
-		[[ -s "${acm_crds_file}" ]]; then
-		echo "Successfully retrieved CRDs using crds.yaml key"
-	elif oc get secret -n "${CLUSTER_NAME}" "${CLUSTER_NAME}-import" \
-		-o jsonpath='{.data.crdsv1\.yaml}' 2>/dev/null | base64 -d >"${acm_crds_file}" &&
-		[[ -s "${acm_crds_file}" ]]; then
-		echo "Successfully retrieved CRDs using crdsv1.yaml key"
-	else
-		bad_exit "Failed to retrieve CRDs from import secret. Secret may not be ready yet or keys are incorrect."
-	fi
-
-	# Get the main import YAML
-	local import_file="${CLUSTER_NAME}-import.yaml"
-	oc get secret -n "${CLUSTER_NAME}" "${CLUSTER_NAME}-import" \
-		-o jsonpath='{.data.import\.yaml}' | base64 -d >"${import_file}"
-
-	# STEP 3: Apply ACM import manifests to spoke
+	# STEP 3: Apply ACM import manifests to spoke (isolated spoke kubeconfig)
 	echo "=== STEP 3: Applying ACM import manifests to spoke ==="
 
-	# Log back into spoke cluster (bootstrap-admin env if no break-glass secret)
-	log_into_cluster "${CREDENTIALS_SECRET:-}" "${AWS_REGION}"
+	use_kubeconfig spoke
+	# Re-assert / refresh spoke session without touching hub kubeconfig
+	log_into_cluster "${CREDENTIALS_SECRET:-}" "${AWS_REGION}" spoke
+	assert_current_server "${BOOTSTRAP_SPOKE_API_URL}" spoke
 
-	# Check if CRDs are already applied (idempotency)
+	# Idempotency checks MUST run against the spoke API only (#45 Failure B)
 	if oc get crd klusterlets.operator.open-cluster-management.io &>/dev/null; then
-		echo "ACM CRDs already applied, skipping..."
+		echo "ACM CRDs already applied on spoke, skipping CRD apply..."
 	else
-		echo "Applying ACM CRDs..."
-		oc apply -f "${acm_crds_file}"
+		echo "Applying ACM CRDs to spoke..."
+		printf '%s\n' "${ACM_CRDS_YAML}" | oc apply -f -
 	fi
 
-	# Check if cluster is already imported (idempotency)
 	if oc get klusterlet klusterlet &>/dev/null; then
-		echo "Klusterlet already exists, cluster may already be imported."
+		echo "Klusterlet already exists on spoke."
 	else
-		echo "Applying cluster import manifest..."
-		oc apply -f "${import_file}"
+		echo "Applying cluster import manifest to spoke..."
+		printf '%s\n' "${ACM_IMPORT_YAML}" | oc apply -f -
 		echo "✓ Spoke cluster import manifest applied."
-		echo "Waiting for klusterlet to connect..."
-		sleep 15
 	fi
 
-	# STEP 4: Verify ArgoCD integration
-	echo "=== STEP 4: Verifying ArgoCD integration ==="
+	# STEP 4: Verify join on hub (hard requirement) + Argo CD soft check
+	echo "=== STEP 4: Verifying ManagedCluster join and ArgoCD integration ==="
 
-	# Log back into hub cluster
-	log_into_cluster "${HUB_CREDENTIALS_SECRET}" "${ACM_REGION}"
+	use_kubeconfig hub
+	log_into_cluster "${HUB_CREDENTIALS_SECRET}" "${ACM_REGION}" hub
+	assert_current_server "${BOOTSTRAP_HUB_API_URL}" hub
 
-	echo "Waiting for ArgoCD cluster secret to be created on hub..."
-	sleep 15
+	wait_for_managed_cluster_joined "${CLUSTER_NAME}"
 
-	# Verify the cluster secret was created in hub ArgoCD
+	echo "Checking for ArgoCD cluster secret on hub..."
 	if oc get secret -n openshift-gitops 2>/dev/null | grep -q "${CLUSTER_NAME}"; then
 		echo "✓ ArgoCD cluster secret created for ${CLUSTER_NAME} on hub."
 	else
@@ -603,7 +978,7 @@ install_gitops_spoke() {
 
 	echo ""
 	echo "✓ Spoke cluster ${CLUSTER_NAME} fully configured:"
-	echo "  - Registered with ACM hub"
+	echo "  - Registered with ACM hub (ManagedClusterJoined=True)"
 	echo "  - ArgoCD installed on spoke (openshift-gitops namespace)"
 	echo "  - Spoke ArgoCD registered with hub ArgoCD (openshift-gitops namespace)"
 	echo "  - ApplicationSets on hub will automatically deploy applications to this cluster"
@@ -669,6 +1044,83 @@ install_aws_privateca_issuer() {
 	helm list -A | grep -i "${chart_name}" || true
 }
 
+# --- Publish rosa-platform-metadata ConfigMap (IRSA / account facts for GitOps) ---
+# Canonical doc: docs/architecture/platform-metadata-irsa.md
+# Breaks ESO chicken-and-egg: charts read secretsManagerRoleArn from this ConfigMap
+# instead of hardcoding account-specific ARNs in cluster-config.
+publish_platform_metadata() {
+	local ns="${PLATFORM_METADATA_NAMESPACE:-openshift-gitops}"
+	local cm_name="${PLATFORM_METADATA_NAME:-rosa-platform-metadata}"
+
+	echo "=== Publishing platform metadata ConfigMap ${ns}/${cm_name} ==="
+
+	# Wait briefly for namespace (created by cluster-bootstrap Helm)
+	local i
+	for i in $(seq 1 60); do
+		if oc get namespace "${ns}" >/dev/null 2>&1; then
+			break
+		fi
+		sleep 5
+	done
+	if ! oc get namespace "${ns}" >/dev/null 2>&1; then
+		echo "WARNING: Namespace ${ns} not found; skipping platform metadata publish."
+		return 0
+	fi
+
+	local aws_account_id="${AWS_ACCOUNT_ID:-}"
+	if [[ -z "${aws_account_id}" && -f "${BOOTSTRAP_VALUES_FILE}" ]]; then
+		aws_account_id="$(grep -E '^aws_account:[[:space:]]*' "${BOOTSTRAP_VALUES_FILE}" | head -1 | awk '{print $2}' | tr -d '"' || true)"
+	fi
+
+	local secrets_manager_role_arn="${SECRETS_MANAGER_ROLE_ARN:-}"
+	local cert_manager_role_arn="${CERT_MANAGER_ROLE_ARN:-}"
+	local bgp_config_secret_name="${BGP_CONFIG_SECRET_NAME:-}"
+
+	# Construct predictable ARNs only when TF did not export them (legacy / partial apply)
+	if [[ -z "${secrets_manager_role_arn}" && -n "${aws_account_id}" && -n "${CLUSTER_NAME:-}" ]]; then
+		secrets_manager_role_arn="arn:aws:iam::${aws_account_id}:role/${CLUSTER_NAME}-rosa-secretsmanager-role-iam"
+		echo "NOTE: SECRETS_MANAGER_ROLE_ARN unset; using constructed ARN (enable_secrets_manager_iam apply recommended)."
+	fi
+	if [[ -z "${cert_manager_role_arn}" && -n "${aws_account_id}" && -n "${CLUSTER_NAME:-}" && -n "${AWS_PRIVATE_CA_ARN:-}" ]]; then
+		cert_manager_role_arn="arn:aws:iam::${aws_account_id}:role/${CLUSTER_NAME}-rosa-cert-manager"
+	fi
+
+	local tmp
+	tmp="$(mktemp)"
+	cat >"${tmp}" <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${cm_name}
+  namespace: ${ns}
+  labels:
+    app.kubernetes.io/name: rosa-platform-metadata
+    app.kubernetes.io/part-of: validated-pattern-terraform-rosa
+    app.kubernetes.io/managed-by: bootstrap-gitops
+data:
+  # All values must be YAML strings (account IDs are numeric and break unquoted).
+  clusterName: "${CLUSTER_NAME:-}"
+  awsRegion: "${AWS_REGION:-}"
+EOF
+	if [[ -n "${aws_account_id}" ]]; then
+		printf '  awsAccountId: "%s"\n' "${aws_account_id}" >>"${tmp}"
+	fi
+	if [[ -n "${secrets_manager_role_arn}" ]]; then
+		printf '  secretsManagerRoleArn: "%s"\n' "${secrets_manager_role_arn}" >>"${tmp}"
+	fi
+	if [[ -n "${cert_manager_role_arn}" ]]; then
+		printf '  certManagerRoleArn: "%s"\n' "${cert_manager_role_arn}" >>"${tmp}"
+	fi
+	if [[ -n "${bgp_config_secret_name}" ]]; then
+		printf '  bgpConfigSecretName: "%s"\n' "${bgp_config_secret_name}" >>"${tmp}"
+	fi
+
+	oc apply -f "${tmp}"
+	rm -f "${tmp}"
+	echo "✓ Platform metadata published to ${ns}/${cm_name}"
+	oc -n "${ns}" get configmap "${cm_name}" -o yaml | grep -E '^(  )?(clusterName|awsAccountId|awsRegion|secretsManagerRoleArn|bgpConfigSecretName|certManagerRoleArn):' || true
+}
+
 # --- Configure storage classes ---
 configure_storage_classes() {
 	echo "=== Configuring storage classes ==="
@@ -708,8 +1160,9 @@ cleanup_acm_spoke() {
 		return 0
 	fi
 
-	# Log into hub cluster
-	log_into_cluster "${HUB_CREDENTIALS_SECRET}" "${ACM_REGION}"
+	# Log into hub cluster (ephemeral hub kubeconfig)
+	use_kubeconfig hub
+	log_into_cluster "${HUB_CREDENTIALS_SECRET}" "${ACM_REGION}" hub
 
 	echo "Cleaning up ACM resources for spoke cluster ${CLUSTER_NAME} on hub..."
 
@@ -784,9 +1237,12 @@ cleanup_acm_spoke() {
 
 # --- Main execution ---
 main() {
+	parse_bootstrap_cli "$@"
+
 	echo "#########################################"
 	echo "GitOps Bootstrap Script"
 	echo "Current Date: $(date)"
+	echo "BOOTSTRAP_PRIVATE=${BOOTSTRAP_PRIVATE} SKIP_GITOPS=${SKIP_GITOPS}"
 	echo "#########################################"
 
 	# Validate environment variables
@@ -794,6 +1250,9 @@ main() {
 
 	# Set NO_PROXY for ROSA HCP
 	export NO_PROXY="${NO_PROXY:-},.p3.openshiftapps.com"
+
+	# Process-local kubeconfigs only — never mutate ~/.kube/config (#45)
+	init_ephemeral_kubeconfigs
 
 	# Determine operation mode
 	local enable="${ENABLE:-true}"
@@ -809,11 +1268,29 @@ main() {
 		good_exit "Bootstrap script cleanup completed."
 	fi
 
-	# Primary cluster login: bootstrap-admin env (no secret arg). Hub/spoke paths pass a secret name explicitly.
-	log_into_cluster "" "${AWS_REGION}"
+	# Primary / spoke cluster login into ephemeral kubeconfig
+	if [[ "${acm_mode}" == "spoke" ]]; then
+		use_kubeconfig spoke
+		log_into_cluster "${CREDENTIALS_SECRET:-}" "${AWS_REGION}" spoke
+	else
+		use_kubeconfig primary
+		log_into_cluster "${CREDENTIALS_SECRET:-}" "${AWS_REGION}" primary
+	fi
 
 	# Worker nodes must exist before Helm pre-install hooks run (installplan-approver Job)
 	wait_for_worker_nodes
+
+	if [[ "${BOOTSTRAP_PRIVATE}" == "true" ]]; then
+		bootstrap_private_gitops_prepare
+	fi
+
+	if [[ "${SKIP_GITOPS}" == "true" ]]; then
+		echo "=== Skip GitOps: publishing platform metadata only (no Argo / cluster-bootstrap) ==="
+		ensure_openshift_gitops_namespace
+		publish_platform_metadata
+		configure_storage_classes
+		good_exit "Skip-gitops bootstrap completed (platform metadata only)."
+	fi
 
 	# Setup Helm repository
 	setup_helm_repo
@@ -821,7 +1298,13 @@ main() {
 	# Install GitOps based on ACM mode
 	case "${acm_mode}" in
 	"spoke")
+		# Ensure spoke kubeconfig remains selected for STEP 1 helm install
+		use_kubeconfig spoke
+		assert_current_server "${BOOTSTRAP_SPOKE_API_URL}" spoke
 		install_gitops_spoke
+		# ACM steps end on hub kubeconfig; day-2 installs below target the spoke
+		use_kubeconfig spoke
+		assert_current_server "${BOOTSTRAP_SPOKE_API_URL}" spoke
 		;;
 	"hub" | "noacm")
 		install_gitops_hub
@@ -831,8 +1314,15 @@ main() {
 		;;
 	esac
 
+	if [[ "${BOOTSTRAP_PRIVATE}" == "true" ]]; then
+		configure_argocd_private_repos
+	fi
+
 	# Install AWS Private CA Issuer if configured
 	install_aws_privateca_issuer
+
+	# Cluster-local facts for GitOps IRSA (ESO, BGP, …) — see docs/architecture/platform-metadata-irsa.md
+	publish_platform_metadata
 
 	# Configure storage classes
 	configure_storage_classes

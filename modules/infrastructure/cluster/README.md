@@ -159,6 +159,21 @@ module "cluster" {
 | tags | Tags to apply to the cluster | `map(string)` | `{}` |
 | additional_machine_pools | Map of additional custom machine pools beyond default pools. Supports advanced features: taints, labels, kubelet configs, tuning configs, version pinning, capacity reservations | `map(object)` | `{}` |
 
+### GitOps bootstrap chart pins
+
+Rendered into `gitops_bootstrap_hub_values` / `gitops_bootstrap_spoke_values` (see `hub-values.yaml.tftpl`). Bump when validated-pattern-helm-charts releases.
+
+| Name | Description | Type | Default |
+|------|-------------|------|---------|
+| helm_chart_version | `cluster-bootstrap` chart version | `string` | `0.5.19` |
+| helm_chart_acm_spoke_version | `cluster-bootstrap-acm-spoke` chart version | `string` | `0.6.14` |
+| helm_chart_acm_hub_registration_version | `cluster-bootstrap-acm-hub-registration` chart version | `string` | `0.2.2` |
+| helm_chart_awspca_version | `aws-privateca-issuer` chart version | `string` | `1.6.1` |
+| app_of_apps_infrastructure_chart_version | `app-of-apps-infrastructure` Argo `targetRevision` | `string` | `0.3.0` |
+| app_of_apps_application_chart_version | `app-of-apps-application` Argo `targetRevision` (non-hub) | `string` | `1.5.8` |
+| app_of_apps_acm_team_onboarding_chart_version | `app-of-apps-acm-team-onboarding` Argo `targetRevision` (hub) | `string` | `0.4.1` |
+| gitops_git_target_revision | Git branch/tag for cluster-config (`gitTargetRevision`) | `string` | `HEAD` |
+
 ### Machine Pool Defaults
 
 | Name | Description | Type | Default |

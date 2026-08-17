@@ -774,6 +774,29 @@ variable "custom_permissions_boundary_arn" {
 # VPC endpoint CIDR block allows for security group
 #------------------------------------------------------------------------------
 
+#------------------------------------------------------------------------------
+# AWS VPC Route Server (for BGP routing with CUDN operator)
+#------------------------------------------------------------------------------
+
+variable "enable_route_server" {
+  description = <<-EOF
+    Enable AWS VPC Route Server for BGP routing with the CUDN BGP routing operator.
+    Creates a Route Server with endpoints in each private subnet, propagation to all
+    route tables, and an IAM role for the operator (IRSA). Requires multi_az = true
+    for production use (one BGP router per AZ).
+  EOF
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "route_server_asn" {
+  description = "Amazon-side ASN for the VPC Route Server. Must not conflict with the BGP local ASN used by OpenShift FRR routers."
+  type        = number
+  default     = 64512
+  nullable    = false
+}
+
 variable "api_endpoint_allowed_cidrs" {
   description = "Optional list of IPv4 CIDR blocks allowed to access the ROSA HCP API endpoint. By default, the VPC endpoint security group only allows access from within the VPC. This variable allows you to add additional CIDR blocks (e.g., VPN ranges, bastion host IPs, or other VPCs)."
   type        = list(string)

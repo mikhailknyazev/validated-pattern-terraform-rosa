@@ -583,6 +583,7 @@ Do **not** treat docs as optional follow-up. Before considering the work done, s
 |----------|-----------------|--------------|
 | Getting started | `docs/getting-started/` (quick-start, authentication, …) | Operator workflow, credentials, or defaults change |
 | Enablement guide | `docs/deployment/enablement.md` | End-to-end deploy/bootstrap/login, tfvars recipes, credential hygiene |
+| Local multi-repo dev | `docs/guides/local-multi-repo-dev.md` | Gitea + Argo primary loop (`bootstrap-private`, `dev.private.sync`); optional `dev.public.apply-local` |
 | CI/CD | `docs/CI_CD.md` / `docs/guides/ci-cd.md` | Env vars, pipeline secrets, script contracts |
 | Scripts docs | `scripts/README.md`, `scripts/**/README*.md` | Script usage, required env vars, Make targets |
 | Module / cluster docs | `modules/**/README.md`, `clusters/README.md` | Module interface or example cluster patterns |
@@ -1277,6 +1278,166 @@ make test            # Run all tests (recommended before commit)
 - Document all operator roles created
 - Use least privilege principles
 
+### Platform metadata / IRSA bootstrap (chicken-and-egg)
+
+**Canonical doc:** [`docs/architecture/platform-metadata-irsa.md`](docs/architecture/platform-metadata-irsa.md).
+
+**Rules for agents:**
+
+1. **Terraform** creates IAM roles and SM secret payloads. **Bootstrap** publishes `rosa-platform-metadata` in `openshift-gitops`. **GitOps** must not hardcode `arn:aws:iam::ACCOUNT:role/...` for ESO (or similar) in portable recipes.
+2. Do **not** share one ESO/operator IAM role across clusters — OIDC trust is per cluster issuer.
+3. Do **not** design flows where ESO reads its own IRSA role ARN from Secrets Manager before IRSA is bound (circular).
+4. Prefer full ARNs from `terraform output` in metadata over name reconstruction in charts.
+5. Chart pattern: optional explicit `roleArn` for break-glass; happy path = `platformMetadata.enabled` + sync Job/hook.
+6. Cert-manager/awspca bootstrap `--set certManagerRole` is the same idea for imperative Helm; metadata generalizes it for Argo-managed charts.
+7. When adding a new chart that needs AWS account or IRSA: follow this pattern; track remaining migrations in the platform-metadata rollout GitHub issue.
+
+### VPC Route Server / CUDN BGP (`enable_route_server`)
+
+Example recipe: `clusters/bgp/terraform.tfvars`. Human enablement: `docs/deployment/enablement.md` → **CUDN BGP / VPC Route Server**.
+
+**Agent deploy/teardown sequence:**
+
+```bash
+make cluster.bgp.init && make cluster.bgp.plan && make cluster.bgp.apply
+make cluster.bgp.bootstrap
+make cluster.bgp.login
+# Preferred (#51): enable_secrets_manager_iam + ESO + cudn chart externalSecret
+#   → no hardcoded routeServerIDs / operator role ARN in cluster-config
+# Outputs for debug: bgp_config_secret_name, secrets_manager_role_arn, route_server_id, bgp_operator_role_arn
+make cluster.bgp.destroy_force   # when validation done — 3x c5.metal is expensive
+```
+
+**Rules for agents:**
+
+1. **Intel bare metal only** for BGP router pools when OpenShift Virtualization is required — do **not** substitute nested virt or Graviton metal for this recipe.
+2. Keep PR/recipe instance type (`c5.metal`) unless the operator explicitly asks to change it. Multi-AZ needs metal in **all** AZs used (e.g. `m5zn.metal` is missing `ap-southeast-2a`).
+3. `enable_route_server = true` creates Route Server, 2 endpoints/private subnet, route-table propagation, IRSA role for `openshift-cudn-bgp-routing-controller-manager`, and Secrets Manager secret `{cluster}-bgp-config`.
+4. Set `enable_secrets_manager_iam = true` on the BGP recipe so ESO can read that secret (issue #51).
+5. GitOps path `dev/bgp` installs ESO + Virt + `cudn-bgp-routing-operator` with `externalSecret` — prefer that over hardcoding role ARN / `routeServerIDs` or manual `rosa-bgp-operator` `make deploy`.
+6. ESO role ARN in cluster-config is still needed once (`{cluster}-rosa-secretsmanager-role-iam`); operator IRSA + `CUDNBgpConfig.aws` come from the synced Secret.
+7. Set `enable_cluster_admin = true` on the recipe for break-glass `make cluster.bgp.login`.
+8. OCP **4.21+** required (example uses 4.22.x) for FRR-K8s / CUDN / RouteAdvertisements.
+9. **HTPasswd greenfield plan:** `modules/infrastructure/htpasswd-idp` `count` must depend only on `var.enabled`, not on `cluster_id` (unknown until apply). Gating on `cluster_id != ""` causes `Invalid count argument` on first plan with `enable_cluster_admin=true`.
+10. Long-running apply/destroy/bootstrap: follow [Long-running cluster operations](#long-running-cluster-operations-ai-operators).
+11. If apply is interrupted: check for orphan VPC/`bgp-*` IAM roles, clear stale `clusters/bgp/.infrastructure.tfstate.lock.info`, reconcile state vs AWS before re-plan/apply.
+
+## Long-running cluster operations (AI operators)
+
+**Scope:** How agents **run** `make cluster.*.apply|destroy|destroy_force|bootstrap|bootstrap-spoke` (and similar waits). This is **not** guidance for authoring `scripts/**/*.sh` — those keep normal `set -euo pipefail` patterns.
+
+### Prefer tmux
+
+1. Use the **tmux MCP** (or an equivalent durable tmux session) for long-lived e2e — one session, panes for apply/destroy/bootstrap/helm/coordinator.
+2. Do **not** rely on Cursor Shell + nested `cmd &` / detached `nohup`: when the parent shell exits, background jobs can be SIGHUPed mid-apply/destroy and leave AWS orphans outside state.
+3. Keep 2-minute status updates (or the interval the operator requests) via `capture-pane` / log tails while ops run.
+
+### EXIT markers inside panes (when coordinators need them)
+
+When a coordinator must wait on completion, wrap the **pane command** so the exit code is logged reliably. Use `bash -lc` because interactive **zsh** + `| tee` leaves `${PIPESTATUS[0]}` empty:
+
+```bash
+mkdir -p "clusters/${NAME}/logs"
+LOG="clusters/${NAME}/logs/$(date -u +%Y%m%dT%H%M%SZ)-destroy.log"
+bash -lc "set +e; make cluster.${NAME}.destroy_force > >(tee -a '${LOG}') 2>&1; EC=\$?; set -e; echo \"BGP_DESTROY_EXIT:\${EC}\" | tee -a '${LOG}'; exit \${EC}"
+```
+
+- Run that **inside** a tmux pane (via `send-keys`), not as a free-floating background Shell job.
+- Marker names: `HUB_APPLY_EXIT:0`, `SPOKE_DESTROY_EXIT:0`, `BGP_DESTROY_EXIT:0`, etc.
+- Do **not** copy this wrapper into new repo scripts unless a script is itself a multi-cluster coordinator that tees Make output.
+
+### Per-cluster isolation
+
+Same checkout is fine for parallel clusters: state/plan under `clusters/<name>/`, `TF_DATA_DIR` via `use_cluster_tf_data_dir` / `Makefile.cluster`. Do not use git worktrees for hub+spoke parallelism.
+
+## Parallel Hub + Spoke Test Deployments (same checkout)
+
+Use this for live ACM hub/spoke validation when you want hub and spoke(s) to **apply or destroy in parallel**. Serial also works; parallel saves wall-clock time (~30–45+ min per cluster). Follow [Long-running cluster operations](#long-running-cluster-operations-ai-operators) while these run.
+
+Config lives in shared `terraform/`, but each cluster has:
+
+| Artifact | Path |
+|----------|------|
+| State | `clusters/<name>/infrastructure.tfstate` (or S3 key) |
+| Plan | `clusters/<name>/terraform.tfplan` |
+| TF data dir | `clusters/<name>/.terraform` via `TF_DATA_DIR` |
+
+`use_cluster_tf_data_dir` in `scripts/common.sh` and `export TF_DATA_DIR` in `Makefile.cluster` set the data dir. Concurrent `make cluster.<a>.apply` and `make cluster.<b>.apply` (or `destroy` / `destroy_force`) from **one checkout** is supported. Do **not** use git worktrees for this.
+
+### Prerequisites
+
+- Hub tfvars: `acm_mode = "hub"`, `enable_cluster_admin = true` (spoke bootstrap needs hub break-glass `HUB_CREDENTIALS_SECRET` until #48)
+- Spoke tfvars: `acm_mode = "spoke"` (or rely on `make cluster.<spoke>.bootstrap-spoke` setting `ACM_MODE=spoke`)
+- Auth: AWS + RHCS credentials available in the shells that start the panes
+
+### Layout (1 hub + N spokes)
+
+```text
+tmux session (e.g. vp-rosa-fleet) — all panes in the same repo checkout
+  pane 0  →  make cluster.<hub>.apply
+  pane 1  →  make cluster.<spoke-1>.apply
+  pane 2  →  make cluster.<spoke-2>.apply   # optional
+  pane N  →  coordinator: wait for applies → hub bootstrap → spoke bootstraps
+```
+
+### Parallel apply (log exit markers)
+
+```bash
+REPO="$(pwd)"
+HUB=dev-hub-1
+SPOKE=dev-spoke-1
+SESSION=vp-rosa-fleet
+
+tmux new-session -d -s "${SESSION}" -n deploy
+tmux split-window -h -t "${SESSION}:deploy"
+# optional coordinator: tmux split-window -v -t "${SESSION}:deploy.0"
+
+# Pane 0 — hub (use bash: zsh has no PIPESTATUS; empty EXIT: markers break coordinators)
+mkdir -p "clusters/${HUB}/logs"
+LOG="clusters/${HUB}/logs/$(date -u +%Y%m%dT%H%M%SZ)-apply.log"
+bash -lc "set +e; make cluster.${HUB}.apply > >(tee -a '${LOG}') 2>&1; EC=\$?; set -e; echo \"HUB_APPLY_EXIT:\${EC}\" | tee -a '${LOG}'; exit \${EC}"
+
+# Pane 1 — spoke (same checkout)
+mkdir -p "clusters/${SPOKE}/logs"
+LOG="clusters/${SPOKE}/logs/$(date -u +%Y%m%dT%H%M%SZ)-apply.log"
+bash -lc "set +e; make cluster.${SPOKE}.apply > >(tee -a '${LOG}') 2>&1; EC=\$?; set -e; echo \"SPOKE_APPLY_EXIT:\${EC}\" | tee -a '${LOG}'; exit \${EC}"
+```
+
+Do **not** rely on `${PIPESTATUS[0]}` in interactive zsh panes — it leaves `HUB_APPLY_EXIT:` / `SPOKE_APPLY_EXIT:` empty and coordinators treat that as failure.
+
+### After applies: bootstrap in order
+
+```bash
+# After HUB_APPLY_EXIT:0
+make "cluster.${HUB}.bootstrap"
+
+# After SPOKE_APPLY_EXIT:0 and hub bootstrap succeeded
+make "cluster.${SPOKE}.bootstrap-spoke" \
+  HUB_CREDENTIALS_SECRET="${HUB}-credentials" \
+  ACM_REGION="<region>"
+```
+
+**Order matters:** hub bootstrap first (ACM installs asynchronously). Spoke bootstrap waits for ManagedCluster CRDs **and** `ocm-webhook` endpoints before hub-registration.
+
+### Parallel destroy
+
+`destroy` / `destroy_force` may also run concurrently for independent clusters (same `TF_DATA_DIR` isolation). If the spoke is still ACM-registered, prefer `teardown-spoke` before destroying the hub.
+
+```bash
+# Optional: unregister spoke first
+make "cluster.${SPOKE}.teardown-spoke" \
+  HUB_CREDENTIALS_SECRET="${HUB}-credentials" \
+  ACM_REGION="<region>"
+
+# Then parallel destroy (two panes, same checkout)
+make "cluster.${HUB}.destroy_force"
+make "cluster.${SPOKE}.destroy_force"
+```
+
+### Coordinator pane (optional)
+
+Poll newest `*-apply.log` / `*-destroy.log` for `*_EXIT:0`, then run bootstrap or report failure. Keep helpers under `clusters/<hub>/logs/` or `/tmp` for the session.
+
 ## Checklist for New Code
 
 When writing new Terraform code, ensure:
@@ -1337,7 +1498,7 @@ Before committing code, ensure:
 
 ## Reference Repositories
 
-**IMPORTANT**: The `./reference/` directory contains three reference repositories that provide valuable source code examples and patterns. These repositories significantly improve Cursor's accuracy and understanding of ROSA HCP Terraform patterns.
+**IMPORTANT**: The `./reference/` directory contains reference repositories (Terraform patterns, GitOps cluster-config, Helm charts) that improve Cursor accuracy and support the local multi-repo development loop. These clones are **gitignored** and are separate git remotes — commit/push in each repo as needed.
 
 ### Checking for Reference Repositories
 
@@ -1412,6 +1573,51 @@ Before committing code, ensure:
      - Understanding how to build API objects (builders)
      - Checking available methods on types (getters, setters)
    - **Example**: Used to verify `AuditLogBuilder.RoleArn()` and `AuditLog.GetRoleArn()` method names
+
+6. **rosa-cluster-config** (`./reference/rosa-cluster-config/`):
+   - **Purpose**: Day 2 GitOps configuration consumed by Argo CD (`dev/<cluster>/infrastructure.yaml`, `applications-ns.yaml`)
+   - **Source**: https://github.com/rh-mobb/rosa-cluster-config
+   - **When to Reference**: Editing infrastructure app lists, ESO/platform-metadata values, cluster-specific GitOps recipes
+   - **Local dev**: Parsed by `scripts/dev/public-local-loop.sh`; `gitops_git_path` in tfvars must match `dev/<cluster>/`
+
+7. **validated-pattern-helm-charts** (`./reference/validated-pattern-helm-charts/`):
+   - **Purpose**: Bootstrap and app-of-apps charts (`cluster-bootstrap`, `app-of-apps-infrastructure`, `external-secrets-operator`, etc.)
+   - **Source**: https://github.com/rh-mobb/validated-pattern-helm-charts
+   - **When to Reference**: Chart template changes, platform-metadata hooks, ESO install patterns
+   - **Local dev**: Primary loop — `dev.private.sync` after `bootstrap-private`; optional `dev.public.apply-local` escape hatch
+
+### Local multi-repo GitOps development
+
+**Canonical doc:** [`docs/guides/local-multi-repo-dev.md`](docs/guides/local-multi-repo-dev.md).
+
+**Rules for agents:**
+
+1. **Primary loop:** `make cluster.<profile>.bootstrap-private` → edit `reference/*` → `make dev.private.sync` → Argo sync (in-cluster Gitea = private customer Git + Helm plane).
+2. **Clone layout:** `reference/rosa-cluster-config` + `reference/validated-pattern-helm-charts` (separate git remotes; never commit into this repo).
+3. **Bootstrap still required once:** publishes `rosa-platform-metadata` — ESO charts depend on it.
+4. **Do not hardcode account ARNs** in portable cluster-config — use `platformMetadata.enabled: true` per [platform-metadata-irsa.md](docs/architecture/platform-metadata-irsa.md).
+5. **Make targets:** `make dev.private.sync`, `dev.private.sync-{config,charts}`, `dev.private.preflight`; optional `make dev.public.apply-local` (no Gitea/Argo).
+6. **PR land order** for cross-cutting GitOps: Terraform (IAM/metadata) → helm-charts → cluster-config; separate PRs per repo.
+7. **CHANGELOG scope:** Update this repo's `CHANGELOG.md` only for Terraform-repo changes; chart/cluster-config repos use their own changelogs.
+8. **Canonical merge validation:** Always run published Git + Helm Argo path before merge; local Gitea loop is for dev/demos.
+9. **Zero-egress ECR mirrors:** deferred — [#56](https://github.com/rh-mobb/validated-pattern-terraform-rosa/issues/56).
+10. **Credentials:** `clusters/<profile>/private-gitops.env` is gitignored — never commit.
+11. **Customer mapping:** Gitea → GitLab/GHE; Gitea Helm packages → Artifactory/Nexus HTTP repo.
+
+### GitOps Helm chart version pins
+
+**MANDATORY** when `validated-pattern-helm-charts` releases a new version, or when you change chart versions in `reference/validated-pattern-helm-charts` that this repo should consume on merge:
+
+1. **Bump Terraform defaults** in [`modules/infrastructure/cluster/01-variables.tf`](modules/infrastructure/cluster/01-variables.tf) — canonical source for bootstrap pins:
+   - `helm_chart_version`, `helm_chart_acm_spoke_version`, `helm_chart_acm_hub_registration_version`, `helm_chart_awspca_version`
+   - `app_of_apps_infrastructure_chart_version`, `app_of_apps_application_chart_version`, `app_of_apps_acm_team_onboarding_chart_version`
+2. **Keep script fallbacks in sync** in [`scripts/cluster/bootstrap-gitops.sh`](scripts/cluster/bootstrap-gitops.sh) (`HELM_CHART_VERSION:-…` etc.) — used only when `gitops_bootstrap_env_exports` is not eval'd.
+3. **Do not hardcode** chart versions in [`hub-values.yaml.tftpl`](modules/infrastructure/cluster/templates/hub-values.yaml.tftpl); use template variables from step 1.
+4. **Update operator docs**: pin table in [`docs/deployment/enablement.md`](docs/deployment/enablement.md).
+5. **CHANGELOG**: add/update an `[Unreleased]` entry in this repo for the same PR (chart repo has its own changelog).
+6. **Verify source of truth**: published [`index.yaml`](https://rh-mobb.github.io/validated-pattern-helm-charts/index.yaml) or local `reference/validated-pattern-helm-charts/charts/<chart>/Chart.yaml` `version:` field.
+
+`bootstrap-private` may patch `targetRevision` from reference `Chart.yaml` during local dev when the clone is ahead of Terraform — that is a dev-loop escape hatch, **not** a substitute for bumping Terraform defaults before merge.
 
 ### Using Reference Repositories
 

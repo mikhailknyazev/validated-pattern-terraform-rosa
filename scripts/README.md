@@ -17,7 +17,13 @@ scripts/
 │   ├── apply-infrastructure.sh
 │   ├── destroy-infrastructure.sh
 │   ├── cleanup-infrastructure.sh
-│   └── bootstrap-gitops.sh
+│   ├── bootstrap-gitops.sh
+│   ├── private-gitea.sh
+│   └── README-bootstrap-gitops.md
+├── dev/                   # Local multi-repo GitOps (see docs/guides/local-multi-repo-dev.md)
+│   ├── private-gitops-lib.sh
+│   ├── private-sync.sh
+│   └── public-local-loop.sh
 ├── tunnel/               # Tunnel management scripts
 │   ├── start.sh
 │   ├── stop.sh
@@ -82,6 +88,8 @@ Shared functions used across all scripts:
 - `get_project_root()` - Get repository root directory
 - `get_cluster_dir()` - Validate and return cluster directory path
 - `get_terraform_dir()` - Get terraform infrastructure directory
+- `use_cluster_tf_data_dir()` - Export `TF_DATA_DIR=clusters/<name>/.terraform` (per-cluster providers/backend metadata; enables concurrent apply/destroy)
+- `cluster_tf_initialized()` - True if that cluster’s `TF_DATA_DIR` has backend metadata
 - `check_backend_config()` - Check for remote backend config
 - `check_required_tools()` - Verify required tools are installed
 - `get_tfvar()` - Extract value from terraform.tfvars
@@ -111,17 +119,45 @@ make cluster.byo-vpc.validate-network
 
 - **`bootstrap-admin.sh`**: Create/destroy short-lived HTPasswd bootstrap admin (used by Make bootstrap)
 - **`bootstrap-gitops.sh`**: Bootstrap GitOps operator on ROSA HCP cluster using Helm charts
+- **`private-gitea.sh`**: Install in-cluster Gitea (Git + Helm packages) for local multi-repo dev
 
 **Usage:**
 ```bash
-# Via Makefile (recommended) — creates bootstrap admin, runs GitOps, tears admin down
+# Standard bootstrap (published Git + Helm)
 make cluster.<cluster-name>.bootstrap
+
+# Local dev: Gitea + Argo (primary loop)
+make cluster.<cluster-name>.bootstrap-private
+make dev.private.sync DEV_CLUSTER_NAME=<cluster-name>
+
+# Platform metadata only (optional escape hatch before apply-local)
+make cluster.<cluster-name>.bootstrap-skip-gitops
+make dev.public.apply-local DEV_CLUSTER_NAME=<cluster-name>
 
 # Debug mode
 DEBUG=true make cluster.<cluster-name>.bootstrap
 ```
 
 See [cluster/README-bootstrap-gitops.md](cluster/README-bootstrap-gitops.md) for standalone usage and env vars.
+
+#### Local development scripts (`dev/`)
+
+- **`private-sync.sh`**: Push `reference/rosa-cluster-config` and Helm charts to in-cluster Gitea (`preflight`, `sync-config`, `sync-charts`, `sync`)
+- **`private-gitops-lib.sh`**: Shared helpers (port-forward, Gitea API, package upload)
+- **`public-local-loop.sh`**: Optional escape hatch — `helm upgrade --install` from local chart dirs without Gitea/Argo (`preflight`, `render`, `apply-local`, `verify`)
+
+**E2E regression** (private GitOps loop): `scripts/cluster/e2e-private-gitops.sh` — see [local-multi-repo-dev.md](../docs/guides/local-multi-repo-dev.md#e2e-regression-test).
+
+**Usage:**
+```bash
+make dev.private.preflight DEV_CLUSTER_NAME=public
+make dev.private.sync DEV_CLUSTER_NAME=public
+
+make dev.public.preflight DEV_CLUSTER_NAME=public   # optional escape hatch
+make dev.public.apply-local DEV_CLUSTER_NAME=public
+```
+
+Requires `clusters/<profile>/private-gitops.env` (written by `bootstrap-private`). See [docs/guides/local-multi-repo-dev.md](../docs/guides/local-multi-repo-dev.md).
 
 **Output:**
 - Creates values file at `clusters/<cluster-dir>/cluster-bootstrap-values.yaml` for inspection
