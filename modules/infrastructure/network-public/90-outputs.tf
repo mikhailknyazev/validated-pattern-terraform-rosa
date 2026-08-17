@@ -68,3 +68,15 @@ output "private_subnet_cidrs" {
   value       = aws_subnet.private[*].cidr_block
   sensitive   = false
 }
+
+output "private_route_table_ids" {
+  description = "List of private subnet route table IDs (empty if persists_through_sleep_network is false)"
+  value       = aws_route_table.private[*].id
+  sensitive   = false
+}
+
+output "public_route_table_ids" {
+  description = "List of public subnet route table IDs (empty if persists_through_sleep_network is false)"
+  value       = aws_route_table.public[*].id
+  sensitive   = false
+}

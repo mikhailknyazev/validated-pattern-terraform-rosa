@@ -234,6 +234,52 @@ output "external_secrets_role_arn" {
   sensitive   = false
 }
 
+#------------------------------------------------------------------------------
+# AWS VPC Route Server (when enable_route_server = true)
+#------------------------------------------------------------------------------
+
+output "route_server_deployed" {
+  description = "Whether AWS VPC Route Server was deployed"
+  value       = var.enable_route_server && length(module.route_server) > 0
+  sensitive   = false
+}
+
+output "route_server_id" {
+  description = "ID of the VPC Route Server (for CUDNBgpConfig CR spec.aws.routeServerIDs)"
+  value       = var.enable_route_server && length(module.route_server) > 0 ? module.route_server[0].route_server_id : null
+  sensitive   = false
+}
+
+output "route_server_asn" {
+  description = "Amazon-side ASN of the VPC Route Server"
+  value       = var.enable_route_server && length(module.route_server) > 0 ? module.route_server[0].route_server_asn : null
+  sensitive   = false
+}
+
+output "route_server_endpoint_ips" {
+  description = "Map of Route Server endpoint keys to ENI IP addresses"
+  value       = var.enable_route_server && length(module.route_server) > 0 ? module.route_server[0].endpoint_ips : {}
+  sensitive   = false
+}
+
+output "bgp_operator_role_arn" {
+  description = "ARN of the IAM role for the CUDN BGP routing operator (for IRSA ServiceAccount annotation)"
+  value       = var.enable_route_server && length(module.route_server) > 0 ? module.route_server[0].bgp_operator_role_arn : null
+  sensitive   = false
+}
+
+output "bgp_config_secret_name" {
+  description = "Secrets Manager secret name for BGP runtime config consumed by ESO (issue #51)"
+  value       = var.enable_route_server && length(module.route_server) > 0 ? module.route_server[0].bgp_config_secret_name : null
+  sensitive   = false
+}
+
+output "bgp_config_secret_arn" {
+  description = "Secrets Manager secret ARN for BGP runtime config consumed by ESO (issue #51)"
+  value       = var.enable_route_server && length(module.route_server) > 0 ? module.route_server[0].bgp_config_secret_arn : null
+  sensitive   = false
+}
+
 output "gitops_bootstrap_enabled" {
   description = "Whether GitOps bootstrap is enabled"
   value       = module.cluster.gitops_bootstrap_enabled

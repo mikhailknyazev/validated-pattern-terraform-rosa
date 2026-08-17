@@ -23,11 +23,24 @@ clusters/
 │   └── terraform.tfvars                  # Cluster-specific variables
 ├── byo-vpc-egress-zero/                  # Example BYO VPC + zero egress
 │   └── terraform.tfvars
+├── bgp/                                  # VPC Route Server + CUDN BGP (metal routers)
+│   └── terraform.tfvars
 ├── egress-zero2/                         # Additional egress-zero cluster (example)
 └── us-east-1-production/                 # Additional cluster (example)
 ```
 
-Each directory under `/clusters/` represents a single cluster. The `public`, `egress-zero`, and `byo-vpc` directories are reference examples. You can create additional clusters by creating new directories at the same level.
+Each directory under `/clusters/` represents a single cluster. The `public`, `egress-zero`, `byo-vpc`, and `bgp` directories are reference examples. You can create additional clusters by creating new directories at the same level.
+
+### BGP / Route Server (`clusters/bgp/`)
+
+Provisions AWS VPC Route Server and IRSA for the CUDN BGP routing operator, plus multi-AZ Intel bare-metal worker pools for OpenShift Virtualization. See [CUDN BGP / VPC Route Server](../docs/deployment/enablement.md#cudn-bgp--vpc-route-server) and [modules/infrastructure/route-server/README.md](../modules/infrastructure/route-server/README.md).
+
+```bash
+make cluster.bgp.init && make cluster.bgp.plan && make cluster.bgp.apply
+make cluster.bgp.bootstrap
+# Tear down promptly — 3× c5.metal is expensive
+make cluster.bgp.destroy_force
+```
 
 ## Cluster Types
 

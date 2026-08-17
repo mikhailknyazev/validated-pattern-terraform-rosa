@@ -9,6 +9,7 @@ This script bootstraps the OpenShift GitOps operator on a ROSA HCP cluster using
 - **Environment Variable Based**: All configuration via environment variables
 - **ACM Support**: Supports hub, spoke, and standalone cluster modes
 - **Short-lived bootstrap login**: Prefer `BOOTSTRAP_USERNAME` / `BOOTSTRAP_PASSWORD` / `CLUSTER_API_URL` from `bootstrap-admin.sh` (created by `make cluster.<name>.bootstrap`). Break-glass Secrets Manager credentials are optional and not used for primary hub/standalone bootstrap.
+- **Platform metadata ConfigMap**: After GitOps install, publishes `openshift-gitops/rosa-platform-metadata` (`secretsManagerRoleArn`, account/region, optional BGP/cert-manager keys) so ESO and other charts bind IRSA without hardcoding account ARNs in cluster-config. See [platform-metadata-irsa.md](../../docs/architecture/platform-metadata-irsa.md).
 
 ## Prerequisites
 
@@ -130,6 +131,8 @@ See script source and Terraform outputs for additional optional variables.
 2. Waits for worker nodes to be Ready
 3. Installs the `cluster-bootstrap` Helm chart
 4. Waits for Argo CD instances
+5. Publishes `rosa-platform-metadata` ConfigMap (IRSA / account facts for GitOps)
+6. Optional AWS Private CA Issuer; storage class defaults
 
 ### ACM Spoke (`ACM_MODE=spoke`)
 

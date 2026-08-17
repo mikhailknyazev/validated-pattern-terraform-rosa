@@ -163,6 +163,7 @@ output "gitops_bootstrap_env_exports" {
     "export CLUSTER_NAME='${var.cluster_name}'",
     length(aws_secretsmanager_secret.cluster_credentials) > 0 ? "export CREDENTIALS_SECRET='${aws_secretsmanager_secret.cluster_credentials[0].name}'" : "",
     "export AWS_REGION='${var.region}'",
+    "export AWS_ACCOUNT_ID='${local.aws_account_id}'",
     "export ACM_MODE='${var.acm_mode}'",
     "export HELM_REPO_NAME='${var.helm_repo_name}'",
     "export HELM_REPO_URL='${var.helm_repo_url}'",
@@ -177,6 +178,9 @@ output "gitops_bootstrap_env_exports" {
     var.helm_chart_acm_hub_registration_version != null ? "export HELM_CHART_ACM_HUB_REGISTRATION_VERSION='${var.helm_chart_acm_hub_registration_version}'" : "",
     var.helm_chart_awspca != null ? "export HELM_CHART_AWSPCA='${var.helm_chart_awspca}'" : "",
     var.helm_chart_awspca_version != null ? "export HELM_CHART_AWSPCA_VERSION='${var.helm_chart_awspca_version}'" : "",
+    var.cert_manager_role_arn != null && var.cert_manager_role_arn != "" ? "export CERT_MANAGER_ROLE_ARN='${var.cert_manager_role_arn}'" : "",
+    var.secrets_manager_role_arn != null && var.secrets_manager_role_arn != "" ? "export SECRETS_MANAGER_ROLE_ARN='${var.secrets_manager_role_arn}'" : "",
+    var.bgp_config_secret_name != null && var.bgp_config_secret_name != "" ? "export BGP_CONFIG_SECRET_NAME='${var.bgp_config_secret_name}'" : "",
     "export ENABLE='true'"
   ])) : null
   sensitive = false

@@ -66,6 +66,14 @@ Thumbs.db
 # Scratch directory for temporary files
 scratch/
 
+# Python bytecode / cache (any location)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Per-cluster apply/bootstrap/destroy logs (local operator artifacts)
+clusters/*/logs/
+
 # Local agent / Superpowers session scratch (brainstorm TUI, logs, pids). Keep docs/superpowers/ tracked.
 .superpowers/
 

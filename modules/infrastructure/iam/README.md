@@ -53,12 +53,10 @@ module "iam" {
   enable_audit_logging        = false  # Legacy, deprecated - use control_plane_log_forwarding instead
   enable_cloudwatch_logging   = true
   enable_cert_manager_iam     = true
-  enable_secrets_manager_iam  = true
+  enable_secrets_manager_iam = true
   aws_private_ca_arn         = "arn:aws:acm-pca:region:account:certificate-authority/..."
-  additional_secrets          = ["my-secret-1", "my-secret-2"]
-
-  # Cluster credentials secret ARN (from cluster module, for Secrets Manager IAM)
-  cluster_credentials_secret_arn = module.cluster.cluster_credentials_secret_arn
+  # Optional extras — IAM uses name-prefix ARN patterns (no lookup required)
+  additional_secrets = ["my-secret-1", "my-secret-2"]
 
   tags = {
     Environment = "production"
@@ -102,8 +100,7 @@ module "iam" {
 | enable_cert_manager_iam | Enable cert-manager IAM resources | `bool` | `false` | no |
 | enable_secrets_manager_iam | Enable Secrets Manager IAM resources for External Secrets Operator IRSA (`external-secrets-operator:external-secrets-sa`) | `bool` | `false` | no |
 | aws_private_ca_arn | AWS Private CA ARN for cert-manager (optional) | `string` | `null` | no |
-| additional_secrets | Additional Secrets Manager secret names for External Secrets Operator IAM policy (optional) | `list(string)` | `null` | no |
-| cluster_credentials_secret_arn | ARN of cluster credentials secret (for Secrets Manager IAM policy) | `string` | `null` | no |
+| additional_secrets | Additional Secrets Manager secret names for External Secrets Operator IAM policy (optional; name-prefix ARN patterns, no pre-create required) | `list(string)` | `null` | no |
 | rosa_permissions_boundary_arn | ARN of the permission boundary policy for ROSA managed IAM roles (account + operator roles). If null, no boundary is applied | `string` | `null` | no |
 | custom_permissions_boundary_arn | ARN of the permission boundary policy for custom IAM roles (EFS CSI, CloudWatch, Secrets Manager, cert-manager, etc.). If null, no boundary is applied | `string` | `null` | no |
 
@@ -215,8 +212,9 @@ The module creates an IAM role for cert-manager to use AWS Private CA:
 The module creates an IAM role for External Secrets Operator to access AWS Secrets Manager:
 
 - Trusts only External Secrets Operator (`external-secrets-operator:external-secrets-sa`)
-- Uses explicit secret ARN lists for maximum security (no wildcards for GetSecretValue)
+- Scopes GetSecretValue/DescribeSecret to name-prefix ARN patterns (`{cluster}-credentials-*` plus `additional_secrets`), so greenfield apply does not require secrets to exist yet (AWS random ARN suffix)
 - Enable by setting `enable_secrets_manager_iam = true`
+- BGP config secret access is attached separately by the route-server module when `secrets_manager_role_name` is set
 
 For External Secrets Operator integration, use the alias output and service account annotation:
 

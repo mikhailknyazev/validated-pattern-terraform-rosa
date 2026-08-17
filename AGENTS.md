@@ -1277,6 +1277,92 @@ make test            # Run all tests (recommended before commit)
 - Document all operator roles created
 - Use least privilege principles
 
+### Platform metadata / IRSA bootstrap (chicken-and-egg)
+
+**Canonical doc:** [`docs/architecture/platform-metadata-irsa.md`](docs/architecture/platform-metadata-irsa.md).
+
+**Rules for agents:**
+
+1. **Terraform** creates IAM roles and SM secret payloads. **Bootstrap** publishes `rosa-platform-metadata` in `openshift-gitops`. **GitOps** must not hardcode `arn:aws:iam::ACCOUNT:role/...` for ESO (or similar) in portable recipes.
+2. Do **not** share one ESO/operator IAM role across clusters — OIDC trust is per cluster issuer.
+3. Do **not** design flows where ESO reads its own IRSA role ARN from Secrets Manager before IRSA is bound (circular).
+4. Prefer full ARNs from `terraform output` in metadata over name reconstruction in charts.
+5. Chart pattern: optional explicit `roleArn` for break-glass; happy path = `platformMetadata.enabled` + sync Job/hook.
+6. Cert-manager/awspca bootstrap `--set certManagerRole` is the same idea for imperative Helm; metadata generalizes it for Argo-managed charts.
+7. When adding a new chart that needs AWS account or IRSA: follow this pattern; track remaining migrations in the platform-metadata rollout GitHub issue.
+
+### Platform metadata / IRSA bootstrap (chicken-and-egg)
+
+**Canonical doc:** [`docs/architecture/platform-metadata-irsa.md`](docs/architecture/platform-metadata-irsa.md).
+
+**Rules for agents:**
+
+1. **Terraform** creates IAM roles and SM secret payloads. **Bootstrap** publishes `rosa-platform-metadata` in `openshift-gitops`. **GitOps** must not hardcode `arn:aws:iam::ACCOUNT:role/...` for ESO (or similar) in portable recipes.
+2. Do **not** share one ESO/operator IAM role across clusters — OIDC trust is per cluster issuer.
+3. Do **not** design flows where ESO reads its own IRSA role ARN from Secrets Manager before IRSA is bound (circular).
+4. Prefer full ARNs from `terraform output` in metadata over name reconstruction in charts.
+5. Chart pattern: optional explicit `roleArn` for break-glass; happy path = `platformMetadata.enabled` + sync Job/hook.
+6. Cert-manager/awspca bootstrap `--set certManagerRole` is the same idea for imperative Helm; metadata generalizes it for Argo-managed charts.
+7. When adding a new chart that needs AWS account or IRSA: follow this pattern; track remaining migrations in the platform-metadata rollout GitHub issue.
+
+### VPC Route Server / CUDN BGP (`enable_route_server`)
+
+Example recipe: `clusters/bgp/terraform.tfvars`. Human enablement: `docs/deployment/enablement.md` → **CUDN BGP / VPC Route Server**.
+
+**Agent deploy/teardown sequence:**
+
+```bash
+make cluster.bgp.init && make cluster.bgp.plan && make cluster.bgp.apply
+make cluster.bgp.bootstrap
+make cluster.bgp.login
+# Preferred (#51): enable_secrets_manager_iam + ESO + cudn chart externalSecret
+#   → no hardcoded routeServerIDs / operator role ARN in cluster-config
+# Outputs for debug: bgp_config_secret_name, secrets_manager_role_arn, route_server_id, bgp_operator_role_arn
+make cluster.bgp.destroy_force   # when validation done — 3x c5.metal is expensive
+```
+
+**Rules for agents:**
+
+1. **Intel bare metal only** for BGP router pools when OpenShift Virtualization is required — do **not** substitute nested virt or Graviton metal for this recipe.
+2. Keep PR/recipe instance type (`c5.metal`) unless the operator explicitly asks to change it. Multi-AZ needs metal in **all** AZs used (e.g. `m5zn.metal` is missing `ap-southeast-2a`).
+3. `enable_route_server = true` creates Route Server, 2 endpoints/private subnet, route-table propagation, IRSA role for `openshift-cudn-bgp-routing-controller-manager`, and Secrets Manager secret `{cluster}-bgp-config`.
+4. Set `enable_secrets_manager_iam = true` on the BGP recipe so ESO can read that secret (issue #51).
+5. GitOps path `dev/bgp` installs ESO + Virt + `cudn-bgp-routing-operator` with `externalSecret` — prefer that over hardcoding role ARN / `routeServerIDs` or manual `rosa-bgp-operator` `make deploy`.
+6. ESO role ARN in cluster-config is still needed once (`{cluster}-rosa-secretsmanager-role-iam`); operator IRSA + `CUDNBgpConfig.aws` come from the synced Secret.
+7. Set `enable_cluster_admin = true` on the recipe for break-glass `make cluster.bgp.login`.
+8. OCP **4.21+** required (example uses 4.22.x) for FRR-K8s / CUDN / RouteAdvertisements.
+9. **HTPasswd greenfield plan:** `modules/infrastructure/htpasswd-idp` `count` must depend only on `var.enabled`, not on `cluster_id` (unknown until apply). Gating on `cluster_id != ""` causes `Invalid count argument` on first plan with `enable_cluster_admin=true`.
+10. Long-running apply/destroy/bootstrap: follow [Long-running cluster operations](#long-running-cluster-operations-ai-operators).
+11. If apply is interrupted: check for orphan VPC/`bgp-*` IAM roles, clear stale `clusters/bgp/.infrastructure.tfstate.lock.info`, reconcile state vs AWS before re-plan/apply.
+
+## Long-running cluster operations (AI operators)
+
+**Scope:** How agents **run** `make cluster.*.apply|destroy|destroy_force|bootstrap|bootstrap-spoke` (and similar waits). This is **not** guidance for authoring `scripts/**/*.sh` — those keep normal `set -euo pipefail` patterns.
+
+### Prefer tmux
+
+1. Use the **tmux MCP** (or an equivalent durable tmux session) for long-lived e2e — one session, panes for apply/destroy/bootstrap/helm/coordinator.
+2. Do **not** rely on Cursor Shell + nested `cmd &` / detached `nohup`: when the parent shell exits, background jobs can be SIGHUPed mid-apply/destroy and leave AWS orphans outside state.
+3. Keep 2-minute status updates (or the interval the operator requests) via `capture-pane` / log tails while ops run.
+
+### EXIT markers inside panes (when coordinators need them)
+
+When a coordinator must wait on completion, wrap the **pane command** so the exit code is logged reliably. Use `bash -lc` because interactive **zsh** + `| tee` leaves `${PIPESTATUS[0]}` empty:
+
+```bash
+mkdir -p "clusters/${NAME}/logs"
+LOG="clusters/${NAME}/logs/$(date -u +%Y%m%dT%H%M%SZ)-destroy.log"
+bash -lc "set +e; make cluster.${NAME}.destroy_force > >(tee -a '${LOG}') 2>&1; EC=\$?; set -e; echo \"BGP_DESTROY_EXIT:\${EC}\" | tee -a '${LOG}'; exit \${EC}"
+```
+
+- Run that **inside** a tmux pane (via `send-keys`), not as a free-floating background Shell job.
+- Marker names: `HUB_APPLY_EXIT:0`, `SPOKE_DESTROY_EXIT:0`, `BGP_DESTROY_EXIT:0`, etc.
+- Do **not** copy this wrapper into new repo scripts unless a script is itself a multi-cluster coordinator that tees Make output.
+
+### Per-cluster isolation
+
+Same checkout is fine for parallel clusters: state/plan under `clusters/<name>/`, `TF_DATA_DIR` via `use_cluster_tf_data_dir` / `Makefile.cluster`. Do not use git worktrees for hub+spoke parallelism.
+
 ## Checklist for New Code
 
 When writing new Terraform code, ensure:

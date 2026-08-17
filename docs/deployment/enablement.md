@@ -367,8 +367,11 @@ Align your fork with these versions, or update the template in your infrastructu
 **Default secrets path:** AWS Secrets Manager integration uses the Red Hat External Secrets Operator (ESO), not AVP. Standard flow is:
 
 1. Terraform creates IAM role access for Secrets Manager ([`enable_secrets_manager_iam = true`](../../terraform/01-variables.tf))
-2. ESO uses `external-secrets-operator:external-secrets-sa` IRSA
-3. `ClusterSecretStore` + `ExternalSecret` sync remote values into Kubernetes `Secret` objects
+2. Bootstrap publishes ConfigMap `rosa-platform-metadata` (includes `secretsManagerRoleArn`) — see [Platform metadata / IRSA](../architecture/platform-metadata-irsa.md)
+3. GitOps installs ESO with `platformMetadata.enabled: true` (no hardcoded account ARN in cluster-config); a chart Job binds IRSA from the ConfigMap
+4. `ClusterSecretStore` + `ExternalSecret` sync remote values into Kubernetes `Secret` objects
+
+Do **not** hardcode `arn:aws:iam::ACCOUNT:role/...` for ESO in portable cluster-config — multi-account fleets break, and ESO cannot read its own role from SM before IRSA exists (chicken-and-egg). Full reasoning: [platform-metadata-irsa.md](../architecture/platform-metadata-irsa.md).
 
 See the [`external-secrets-operator` chart](https://github.com/rh-mobb/validated-pattern-helm-charts/tree/main/charts/external-secrets-operator) in your cluster-config infrastructure applications and the Terraform toggle [`enable_secrets_manager_iam`](../../terraform/01-variables.tf).
 
@@ -600,6 +603,7 @@ flowchart TB
 | Cluster access | `enable_client_vpn`, `enable_bastion` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) |
 | Compute model | `enable_autonode`, `default_*_replicas`, `additional_machine_pools` | [autonode](../../clusters/autonode/terraform.tfvars), [public](../../clusters/public/terraform.tfvars) |
 | Fleet / ACM | `acm_mode`, hub/spoke bootstrap targets | [dev-hub-1](../../clusters/dev-hub-1/terraform.tfvars), [dev-spoke-1](../../clusters/dev-spoke-1/terraform.tfvars) |
+| BGP / Route Server | `enable_route_server`, `route_server_asn`, metal `additional_machine_pools` | [bgp](../../clusters/bgp/terraform.tfvars) — see [CUDN BGP / VPC Route Server](#cudn-bgp--vpc-route-server) |
 | GitOps | `enable_gitops_bootstrap`, `gitops_git_repo_url`, `gitops_git_path` | Any example with GitOps enabled |
 | Day-0 / break-glass login | `enable_cluster_admin` (default `false`; examples set `true`) | All example tfvars; see [Authentication](../getting-started/authentication.md) |
 | Production hardening | `openshift_version`, KMS, `fips`, `enable_termination_protection` | [egress-zero](../../clusters/egress-zero/terraform.tfvars) |
@@ -656,6 +660,83 @@ Use these as copy-paste sources — not as exclusive cluster "types":
 | [autonode](../../clusters/autonode/terraform.tfvars) | `enable_autonode`, `additional_cluster_properties`, version/region |
 | [dev-hub-1](../../clusters/dev-hub-1/terraform.tfvars) | Hub cluster sizing; set `acm_mode = hub` in module |
 | [dev-spoke-1](../../clusters/dev-spoke-1/terraform.tfvars) | Spoke GitOps path; use `bootstrap-spoke` Makefile target |
+| [bgp](../../clusters/bgp/terraform.tfvars) | `enable_route_server`, multi-AZ metal BGP routers, GitOps path `dev/bgp` |
+
+### CUDN BGP / VPC Route Server
+
+Use the [bgp](../../clusters/bgp/terraform.tfvars) recipe to provision AWS VPC Route Server + IRSA for the [CUDN BGP routing operator](https://github.com/jingczhang/rosa-bgp-operator), with OpenShift Virtualization and operator install driven by [rosa-cluster-config `dev/bgp`](https://github.com/rh-mobb/rosa-cluster-config/tree/main/dev/bgp).
+
+**What Terraform creates** when `enable_route_server = true`:
+
+| Resource | Purpose |
+|----------|---------|
+| VPC Route Server + ASN | Amazon-side BGP peer (`route_server_asn`, default `64512`) |
+| Endpoints (2 per private subnet) | BGP neighbor ENIs; operator discovers via `DescribeRouteServerEndpoints` |
+| Route propagation | Private + public route tables |
+| IAM role/policy (IRSA) | Trusts `openshift-cudn-bgp-routing:openshift-cudn-bgp-routing-controller-manager` |
+
+**Recipe characteristics** (`clusters/bgp`):
+
+- Public multi-AZ ROSA HCP, OCP **4.21+** (example pins `4.22.2` / `fast-4.22`) for FRR-K8s / CUDN / RouteAdvertisements
+- One **Intel bare-metal** worker pool per AZ (`c5.metal`) labeled `bgp_router=true` (OpenShift Virtualization — nested virt is not supported for this path)
+- GitOps path `dev/bgp` installs `rosa-virtualization` + `cudn-bgp-routing-operator`
+- Set `enable_cluster_admin = true` for `make cluster.bgp.login`
+
+**Cost warning:** Three `c5.metal` nodes in `ap-southeast-2` are ~$16/hr on-demand. Tear down promptly after validation (`make cluster.bgp.destroy_force`).
+
+#### Deploy
+
+```bash
+# Requires AWS + RHCS/OCM credentials (service account preferred for apply)
+make cluster.bgp.init
+make cluster.bgp.plan
+make cluster.bgp.apply      # 30–45+ minutes; Route Server finishes early, ROSA cluster dominates
+make cluster.bgp.bootstrap  # GitOps + short-lived bootstrap HTPasswd
+make cluster.bgp.login      # break-glass admin from Secrets Manager
+```
+
+#### Wire BGP config via External Secrets (preferred — issue #51)
+
+Terraform publishes `{cluster_name}-bgp-config` to AWS Secrets Manager (`role_arn`, `region`, `route_server_id`, `route_server_ids`) when `enable_route_server = true`. With `enable_secrets_manager_iam = true`, the ESO IRSA role can read that secret.
+
+Architecture (do not hardcode ESO/operator ARNs in git):
+
+1. Bootstrap writes `rosa-platform-metadata` (`secretsManagerRoleArn`, `bgpConfigSecretName`, …) — [platform-metadata-irsa.md](../architecture/platform-metadata-irsa.md)
+2. GitOps installs ESO with `platformMetadata.enabled: true` (binds IRSA from ConfigMap)
+3. `cudn-bgp-routing-operator` uses `externalSecret` for operator role / region / routeServerIDs from `{cluster}-bgp-config`
+
+Keep `defaults.plugin: false` in [rosa-cluster-config](https://github.com/rh-mobb/rosa-cluster-config) `dev/bgp/infrastructure.yaml`. Set ESO `target.enabled: false` unless you need the Kuadrant credentials ExternalSecret.
+
+```bash
+# Optional verification after apply / bootstrap
+cd terraform
+export TF_DATA_DIR="../clusters/bgp/.terraform"
+terraform init -reconfigure -input=false \
+  -backend-config="path=$(pwd)/../clusters/bgp/infrastructure.tfstate" >/dev/null
+terraform output -raw bgp_config_secret_name
+terraform output -raw secrets_manager_role_arn
+oc -n openshift-gitops get configmap rosa-platform-metadata -o yaml
+```
+
+Manual fallback (no ESO): annotate the operator ServiceAccount with `bgp_operator_role_arn` and set `cudnBgpConfig.aws` from `route_server_id` / region, then restart the manager pod.
+
+#### Post-deploy validation checklist
+
+1. Workers Ready including three metal BGP routers (`oc get nodes -l bgp_router=true`)
+2. OpenShift Virtualization / CNV operator healthy
+3. Operator pod Running in `openshift-cudn-bgp-routing` with IRSA (no AWS credential errors in logs)
+4. `CUDNBgpConfig` status shows discovered Route Server endpoints / ASN
+5. Route Server peers exist for BGP router node IPs (`aws ec2 describe-route-server-peers`)
+
+#### Teardown
+
+```bash
+make cluster.bgp.destroy_force
+```
+
+Unregister ACM spokes first if this cluster was imported to a hub. Confirm Route Server and metal instances are gone in the AWS console before walking away (cost).
+
+Module reference: [modules/infrastructure/route-server/README.md](../../modules/infrastructure/route-server/README.md).
 
 ### Post-bootstrap validation
 

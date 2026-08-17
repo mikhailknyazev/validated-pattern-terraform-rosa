@@ -487,7 +487,7 @@ resource "rhcs_hcp_machine_pool" "additional" {
       condition = each.value.autoscaling_enabled ? (
         each.value.max_replicas >= each.value.min_replicas
       ) : true
-      error_message = "For machine pool '${each.key}': max_replicas (${each.value.max_replicas}) must be greater than or equal to min_replicas (${each.value.min_replicas})"
+      error_message = "For machine pool '${each.key}': max_replicas (${coalesce(each.value.max_replicas, 0)}) must be greater than or equal to min_replicas (${coalesce(each.value.min_replicas, 0)})"
     }
   }
 
