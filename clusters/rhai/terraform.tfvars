@@ -28,7 +28,23 @@ gitops_git_repo_url     = "https://github.com/rh-mobb/rosa-cluster-config.git"
 gitops_git_path         = "dev/rhai"
 
 # Additional Machine Pools
-additional_machine_pools = {}
+additional_machine_pools = {
+  "compute-0" = {
+    subnet_index        = 0
+    instance_type       = "m5.xlarge"
+    autoscaling_enabled = true
+    min_replicas        = 1
+    max_replicas        = 2
+  }
+additional_machine_pools = {
+  "compute-1" = {
+    subnet_index        = 0
+    instance_type       = "m5.xlarge"
+    autoscaling_enabled = true
+    replicas            = 1
+  }
+}
+}
 
 # Optional Features - minimal for lab/demo
 persists_through_sleep        = true
