@@ -9,6 +9,9 @@ This script bootstraps the OpenShift GitOps operator on a ROSA HCP cluster using
 - **Environment Variable Based**: All configuration via environment variables
 - **ACM Support**: Supports hub, spoke, and standalone cluster modes
 - **Short-lived bootstrap login**: Prefer `BOOTSTRAP_USERNAME` / `BOOTSTRAP_PASSWORD` / `CLUSTER_API_URL` from `bootstrap-admin.sh` (created by `make cluster.<name>.bootstrap`). Break-glass Secrets Manager credentials are optional and not used for primary hub/standalone bootstrap.
+- **Ephemeral kubeconfigs (#45)**: All `oc`/`helm` calls use process-local `KUBECONFIG` files under a `mktemp` directory (deleted on exit). The script does **not** write to `~/.kube/config` or `clusters/<name>/`, so concurrent bootstrap runs and other terminals cannot steal the context mid-flight.
+- **Spoke → hub login (interim)**: `ACM_MODE=spoke` requires `HUB_CREDENTIALS_SECRET` — the hub **break-glass admin** secret (`enable_cluster_admin = true` on the hub). Durable decoupling is tracked in [#48](https://github.com/rh-mobb/validated-pattern-terraform-rosa/issues/48).
+- **ACM readiness wait (#45)**: Before hub-registration, spoke bootstrap polls for ManagedCluster CRDs **and** `ocm-webhook` endpoints in `multicluster-engine`. CRDs can exist while the admission webhook still has no endpoints; applying registration too early fails.
 - **Platform metadata ConfigMap**: After GitOps install, publishes `openshift-gitops/rosa-platform-metadata` (`secretsManagerRoleArn`, account/region, optional BGP/cert-manager keys) so ESO and other charts bind IRSA without hardcoding account ARNs in cluster-config. See [platform-metadata-irsa.md](../../docs/architecture/platform-metadata-irsa.md).
 
 ## Prerequisites
@@ -136,7 +139,7 @@ export BOOTSTRAP_VALUES_FILE="/path/to/clusters/my-cluster/cluster-bootstrap-val
 | Variable | Description | Default | Required When |
 |----------|-------------|---------|---------------|
 | `ACM_MODE` | ACM mode: `hub`, `spoke`, or `noacm` | `noacm` | Always |
-| `HUB_CREDENTIALS_SECRET` | Hub cluster credentials secret name | - | `ACM_MODE=spoke` |
+| `HUB_CREDENTIALS_SECRET` | Hub **break-glass** credentials secret name (`enable_cluster_admin=true` on hub; interim until #48) | - | `ACM_MODE=spoke` |
 | `ACM_REGION` | AWS region where ACM hub is located | - | `ACM_MODE=spoke` |
 
 ### Helm Chart Configuration
@@ -178,13 +181,21 @@ See script source and Terraform outputs for additional optional variables.
 
 ### ACM Spoke (`ACM_MODE=spoke`)
 
-1. Logs into spoke cluster
+1. Logs into spoke via ephemeral spoke kubeconfig
 2. Installs `cluster-bootstrap-acm-spoke` Helm chart on spoke
-3. Logs into hub cluster (`HUB_CREDENTIALS_SECRET`)
-4. Installs hub registration chart
-5. Retrieves ACM import manifests
-6. Applies ACM CRDs and import manifest to spoke
-7. Verifies ArgoCD integration
+3. Logs into hub via separate ephemeral hub kubeconfig (`HUB_CREDENTIALS_SECRET` break-glass admin)
+4. **Polls** for ACM CRDs and `ocm-webhook` endpoints on the hub (GitOps up ≠ ACM ready)
+5. Installs hub registration chart (if needed)
+6. **Polls** for `${CLUSTER_NAME}-import` secret keys; loads `crds`/`import` YAML into memory (no CWD files)
+7. Switches back to spoke kubeconfig, **asserts** API server is the spoke, applies manifests
+8. On hub: waits until `ManagedClusterJoined=True` (hard fail on timeout); soft-checks Argo CD cluster secret
+
+### Safe hub/spoke `oc` pattern
+
+- Bootstrap always sets `KUBECONFIG` to a temp file (`primary`, `hub`, or `spoke` under a `mktemp -d`).
+- Before idempotent skip/apply on the spoke, the script asserts `oc whoami --show-server` matches the spoke API URL from credentials.
+- Import YAML is kept in shell variables for the process lifetime — not written next to Terraform state.
+- Do not rely on `~/.kube/config` during bootstrap; use `make cluster.<name>.login` separately for interactive admin sessions.
 
 ## Cleanup
 

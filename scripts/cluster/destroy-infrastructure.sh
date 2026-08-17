@@ -16,6 +16,7 @@ if [ -z "$CLUSTER_NAME" ]; then
 fi
 
 CLUSTER_DIR=$(get_cluster_dir "$CLUSTER_NAME")
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
 warn "WARNING: This will destroy the infrastructure!"
@@ -29,6 +30,13 @@ if [ "${AUTO_APPROVE:-}" != "true" ]; then
 		info "Destroy cancelled"
 		exit 0
 	fi
+fi
+
+# Ensure this cluster's backend metadata exists (may be first run after TF_DATA_DIR migration)
+if ! cluster_tf_initialized; then
+	info "Not initialized for this cluster, initializing first..."
+	"$SCRIPT_DIR/init-infrastructure.sh" "$CLUSTER_NAME"
+	use_cluster_tf_data_dir "$CLUSTER_NAME"
 fi
 
 info "Destroying infrastructure..."

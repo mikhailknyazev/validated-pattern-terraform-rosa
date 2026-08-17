@@ -16,6 +16,7 @@ if [ -z "$CLUSTER_NAME" ]; then
 fi
 
 CLUSTER_DIR=$(get_cluster_dir "$CLUSTER_NAME")
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
 # Plan file is in cluster directory
@@ -25,6 +26,7 @@ PLAN_FILE="$CLUSTER_DIR/terraform.tfplan"
 if [ ! -f "$PLAN_FILE" ]; then
 	info "Plan not found, planning first..."
 	"$SCRIPT_DIR/plan-infrastructure.sh" "$CLUSTER_NAME"
+	use_cluster_tf_data_dir "$CLUSTER_NAME"
 fi
 
 info "Applying infrastructure changes..."

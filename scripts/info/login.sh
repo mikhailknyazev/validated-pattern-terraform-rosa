@@ -18,6 +18,7 @@ if [ -z "$CLUSTER_NAME" ]; then
 fi
 
 get_cluster_dir "$CLUSTER_NAME" >/dev/null # Validate cluster exists
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
 check_required_tools oc
@@ -27,10 +28,10 @@ info "Logging into cluster..."
 cd "$TERRAFORM_INFRA_DIR"
 
 EXPECTED_STATE_SUFFIX="clusters/${CLUSTER_NAME}/infrastructure.tfstate"
-BACKEND_META="${TERRAFORM_INFRA_DIR}/.terraform/terraform.tfstate"
+BACKEND_META="${TF_DATA_DIR}/terraform.tfstate"
 
 # Do not run terraform init — login only needs outputs from this cluster's state.
-# terraform/ is shared and reconfigured per cluster; verify backend targets this cluster.
+# Per-cluster TF_DATA_DIR holds backend metadata; verify it targets this cluster.
 if [[ ! -f "$BACKEND_META" ]]; then
 	error "Terraform is not initialized (missing ${BACKEND_META})."
 	error "Initialize for this cluster: make cluster.${CLUSTER_NAME}.init"

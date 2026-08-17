@@ -16,11 +16,12 @@ if [ -z "$CLUSTER_NAME" ]; then
 	exit 1
 fi
 
-TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 get_cluster_dir "$CLUSTER_NAME" >/dev/null # Validate cluster exists
+use_cluster_tf_data_dir "$CLUSTER_NAME"
+TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
 # Check infrastructure is initialized
-if [ ! -d "$TERRAFORM_INFRA_DIR/.terraform" ]; then
+if ! cluster_tf_initialized; then
 	error "Infrastructure not initialized. Run init-infrastructure.sh first"
 	exit 1
 fi

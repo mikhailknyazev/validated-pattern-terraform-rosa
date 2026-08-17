@@ -18,6 +18,7 @@ if [ -z "$CLUSTER_NAME" ]; then
 fi
 
 CLUSTER_DIR=$(get_cluster_dir "$CLUSTER_NAME")
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
 # Get network config
@@ -25,7 +26,7 @@ source "$PROJECT_ROOT/scripts/utils/get-network-config.sh" "$CLUSTER_DIR"
 
 info "$CLUSTER_NAME Cluster Credentials ($MODE):"
 
-# Get admin password
+# Get admin password (inherits TF_DATA_DIR)
 ADMIN_PASSWORD=$("$PROJECT_ROOT/scripts/utils/get-admin-password.sh" "$TERRAFORM_INFRA_DIR" 2>/dev/null || echo "")
 
 if [ -n "$ADMIN_PASSWORD" ]; then

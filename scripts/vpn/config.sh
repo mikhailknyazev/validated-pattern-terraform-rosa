@@ -17,10 +17,12 @@ fi
 
 # Validate cluster directory exists (get_cluster_dir exits if not found)
 get_cluster_dir "$CLUSTER_NAME" >/dev/null
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_INFRA_DIR=$(get_terraform_dir infrastructure)
 
 # Initialize to ensure we have the correct cluster state
 "$SCRIPT_DIR/../cluster/init-infrastructure.sh" "$CLUSTER_NAME" >/dev/null 2>&1 || true
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 
 cd "$TERRAFORM_INFRA_DIR"
 VPN_DEPLOYED=$(terraform output -no-color -raw client_vpn_deployed 2>/dev/null | tr -d '\n\r' | sed 's/[[:space:]]*$//' || echo "false")

@@ -821,6 +821,49 @@ sequenceDiagram
 
 Hub credentials are stored in AWS Secrets Manager. The spoke bootstrap script reads hub credentials from the secret named in `HUB_CREDENTIALS_SECRET`.
 
+**Interim requirement (#45 / #48):** `HUB_CREDENTIALS_SECRET` must be the hub’s **break-glass admin** secret (`enable_cluster_admin = true` on the hub). Spoke bootstrap cannot use the hub’s short-lived bootstrap HTPasswd user (torn down after hub bootstrap). A durable automation credential model is tracked in [#48](https://github.com/rh-mobb/validated-pattern-terraform-rosa/issues/48).
+
+**Kubeconfig isolation (#45):** `bootstrap-gitops.sh` uses process-local ephemeral `KUBECONFIG` files (not `~/.kube/config`) and asserts the spoke API before applying ACM import manifests, so concurrent `oc login` cannot cause a false “already imported” skip.
+
+**ACM readiness (#45):** Spoke bootstrap waits for ManagedCluster CRDs and `ocm-webhook` endpoints in `multicluster-engine` before hub-registration. Hub GitOps finishing does not mean ACM is ready to import spokes; applying too early fails (CRDs missing or webhook with zero endpoints).
+
+### Parallel hub + spoke apply / destroy (optional)
+
+Terraform **apply** and **destroy** for the hub and one or more spokes can run at the same time from a single checkout. Each cluster keeps its own state and Terraform data dir under `clusters/<name>/` (`infrastructure.tfstate` + `.terraform/`), so concurrent `make cluster.<name>.{init,plan,apply,destroy}` does not collide.
+
+**Bootstrap** is still ordered: hub first, then each spoke (`bootstrap-spoke`). Teardown of GitOps/ACM registration (`teardown-spoke`) should finish before destroying the hub if spokes still depend on it.
+
+Example (1 hub + 1 spoke) — two terminals or tmux panes in the same repo:
+
+```bash
+# Terminal 1 — hub
+make cluster.dev-hub-1.apply
+
+# Terminal 2 — spoke (same checkout)
+make cluster.dev-spoke-1.apply
+```
+
+After both applies succeed:
+
+```bash
+make cluster.dev-hub-1.bootstrap
+make cluster.dev-spoke-1.bootstrap-spoke \
+  HUB_CREDENTIALS_SECRET=dev-hub-1-credentials \
+  ACM_REGION=<region>
+```
+
+Parallel destroy (after spoke teardown if registered):
+
+```bash
+# Terminal 1
+make cluster.dev-hub-1.destroy_force
+
+# Terminal 2
+make cluster.dev-spoke-1.destroy_force
+```
+
+Serial apply/destroy from one terminal remains fine if you do not need the time savings.
+
 **Known limitation:** `acm_mode` is defined in the cluster module ([01-variables.tf](../../modules/infrastructure/cluster/01-variables.tf)) but not yet exposed in root [terraform/10-main.tf](../../terraform/10-main.tf). Set it in your fork's module call or extend root variable passthrough. Example cluster directories named `dev-hub-1` / `dev-spoke-1` default to `noacm` unless you configure `acm_mode` explicitly; `bootstrap-spoke` overrides `ACM_MODE=spoke` at runtime via the Makefile.
 
 ---

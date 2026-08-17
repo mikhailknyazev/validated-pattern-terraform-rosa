@@ -88,6 +88,8 @@ Shared functions used across all scripts:
 - `get_project_root()` - Get repository root directory
 - `get_cluster_dir()` - Validate and return cluster directory path
 - `get_terraform_dir()` - Get terraform infrastructure directory
+- `use_cluster_tf_data_dir()` - Export `TF_DATA_DIR=clusters/<name>/.terraform` (per-cluster providers/backend metadata; enables concurrent apply/destroy)
+- `cluster_tf_initialized()` - True if that cluster’s `TF_DATA_DIR` has backend metadata
 - `check_backend_config()` - Check for remote backend config
 - `check_required_tools()` - Verify required tools are installed
 - `get_tfvar()` - Extract value from terraform.tfvars

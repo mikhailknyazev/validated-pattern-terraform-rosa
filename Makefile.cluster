@@ -15,6 +15,11 @@ SCRIPT_DIR := scripts
 TERRAFORM_DIR := terraform
 CLUSTER_DIR := clusters/$(CLUSTER_NAME)
 
+# Per-cluster Terraform data dir (providers, modules, backend metadata).
+# State stays in clusters/$(CLUSTER_NAME)/infrastructure.tfstate (or S3).
+# Enables concurrent init/plan/apply/destroy for different clusters from one checkout.
+export TF_DATA_DIR := $(abspath $(CLUSTER_DIR)/.terraform)
+
 # Check cluster exists
 check-cluster:
 	@$(SCRIPT_DIR)/utils/check-cluster.sh $(CLUSTER_NAME)
@@ -400,7 +405,7 @@ validate-network: check-cluster ## Validate VPC for BYO or Terraform-managed net
 		[[ "$$MULTI" == "true" ]] && ARGS="$$ARGS --multi-az" || ARGS="$$ARGS --single-az"; \
 		if [[ -n "$$VPC_ID" ]]; then \
 			ARGS="$$ARGS --vpc-id $$VPC_ID"; \
-		elif [ -d "$(TERRAFORM_DIR)/.terraform" ]; then \
+		elif [ -f "$(TF_DATA_DIR)/terraform.tfstate" ]; then \
 			TF_VPC=$$(cd $(TERRAFORM_DIR) && terraform output -raw vpc_id 2>/dev/null || true); \
 			[[ -n "$$TF_VPC" && "$$TF_VPC" != "null" ]] && ARGS="$$ARGS --vpc-id $$TF_VPC"; \
 		fi; \

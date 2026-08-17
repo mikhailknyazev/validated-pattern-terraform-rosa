@@ -25,6 +25,7 @@ if [[ -z "$CLUSTER_NAME" || -z "$ACTION" ]]; then
 fi
 
 CLUSTER_DIR=$(get_cluster_dir "$CLUSTER_NAME")
+use_cluster_tf_data_dir "$CLUSTER_NAME"
 TERRAFORM_DIR=$(get_terraform_dir infrastructure)
 TFVARS="$CLUSTER_DIR/terraform.tfvars"
 

@@ -4,7 +4,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../common.sh"
 
@@ -51,8 +50,9 @@ if [[ "$NETWORK_TYPE" == "existing" ]]; then
 	info "Validating BYO VPC: $VPC_ID"
 	"$SCRIPT_DIR/byo-network.sh" "${NETWORK_ARGS[@]}" || NETWORK_EXIT=$?
 else
-	TERRAFORM_DIR="$PROJECT_ROOT/terraform"
-	if [[ -d "$TERRAFORM_DIR/.terraform" ]]; then
+	use_cluster_tf_data_dir "$CLUSTER_NAME"
+	TERRAFORM_DIR=$(get_terraform_dir infrastructure)
+	if cluster_tf_initialized; then
 		TF_VPC=$(cd "$TERRAFORM_DIR" && terraform output -raw vpc_id 2>/dev/null || true)
 		if [[ -n "$TF_VPC" && "$TF_VPC" != "null" ]]; then
 			info "Validating Terraform-managed VPC: $TF_VPC"

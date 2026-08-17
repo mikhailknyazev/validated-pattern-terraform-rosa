@@ -215,6 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documentation and versioning standards
 
 ### Fixed
+- **Spoke ACM import reliability (#45)**: `bootstrap-gitops.sh` uses process-local ephemeral `KUBECONFIG`s (not `~/.kube/config`), asserts spoke/hub API servers before apply/skip, polls for ACM CRDs **and** `ocm-webhook` endpoints on the hub before hub-registration (CRDs alone are insufficient), polls for the ACM import secret instead of `sleep 45`, keeps import YAML in memory, and fails unless `ManagedClusterJoined=True`. Spoke mode requires hub break-glass `HUB_CREDENTIALS_SECRET` (interim until #48). Missing `ocm-webhook` Endpoints no longer aborts the wait loop under `pipefail` (treat as zero endpoints and keep polling).
+- **Per-cluster Terraform data dir**: Scripts and `Makefile.cluster` set `TF_DATA_DIR=clusters/<name>/.terraform` so init/plan/apply/destroy for different clusters can run concurrently from one checkout (no git worktree). State remains `clusters/<name>/infrastructure.tfstate` (or S3).
 - **`bootstrap-private` laptop Helm against Gitea**: Use port-forward URL (`private_gitops_work_helm_repo_url`) instead of in-cluster `cluster.local` for repo setup and chart upload.
 - **`bootstrap-private` cluster-bootstrap install**: Install from local reference chart path when `--private` (Gitea Helm index embeds unreachable internal URLs).
 - **Gitea re-install on bootstrap retry**: Skip Helm upgrade when Gitea release is healthy and `private-gitops.env` exists (bootstrap user may lack `gitea` namespace RBAC).
