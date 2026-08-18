@@ -36,14 +36,21 @@ additional_machine_pools = {
     min_replicas        = 1
     max_replicas        = 2
   }
-additional_machine_pools = {
-  "compute-1" = {
-    subnet_index        = 0
-    instance_type       = "m5.xlarge"
-    autoscaling_enabled = true
-    replicas            = 1
-  }
-}
+  # "compute-1" = {
+  #   subnet_index        = 0
+  #   instance_type       = "m5.xlarge"
+  #   autoscaling_enabled = false
+  #   replicas            = 1
+  # }
+  # "infra" = {
+  #   subnet_index          = 0
+  #   instance_type         = "m5.xlarge"
+  #   autoscaling_enabled   = false # Changed from True to False
+  #   replicas              = 3
+  #   # min_replicas        = 1   # Must be set to Null
+  #   # max_replicas        = 3   # Must be set to Null
+  #   version               = "4.22.4"
+  # }
 }
 
 # Optional Features - minimal for lab/demo
