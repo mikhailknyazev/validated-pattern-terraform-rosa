@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Local multi-repo dev (Gitea + Argo)**: [`docs/guides/local-multi-repo-dev.md`](docs/guides/local-multi-repo-dev.md) — `bootstrap-private`, `dev.private.sync`, reference clone layout; optional `dev.public.apply-local` escape hatch
-- **Private GitOps E2E runner**: `scripts/cluster/e2e-private-gitops.sh` — apply → `bootstrap-private` → `dev.private.sync` → Argo verification (`E2E_CLUSTER_NAME`, `E2E_CLUSTER_PROFILE` optional).
+- **Local multi-repo dev (Gitea + Argo)**: [`docs/guides/local-multi-repo-dev.md`](docs/guides/local-multi-repo-dev.md) — `bootstrap-gitea`, `dev.private.sync`, reference clone layout; optional `dev.public.apply-local` escape hatch
+- **Private GitOps E2E runner**: `scripts/cluster/e2e-private-gitops.sh` — apply → `bootstrap-gitea` → `dev.private.sync` → Argo verification (`E2E_CLUSTER_NAME`, `E2E_CLUSTER_PROFILE` optional).
 - **VPC Route Server module** (`modules/infrastructure/route-server/`): New module for AWS VPC Route Server BGP integration with the CUDN BGP routing operator. Creates a Route Server with configurable ASN, 2 endpoints per private subnet, route propagation to all route tables (private and public), and an IRSA IAM role/policy for the operator. Enabled per-cluster via `enable_route_server = true` and `route_server_asn` in terraform.tfvars.
 - **Route Server variables / outputs**: Root `enable_route_server`, `route_server_asn`; outputs `route_server_id`, `route_server_asn`, `route_server_deployed`, `route_server_endpoint_ips`, `bgp_operator_role_arn`. Network modules export `private_route_table_ids` / `public_route_table_ids`.
 - **BGP config Secrets Manager secret (#51)**: Route Server module publishes `{cluster}-bgp-config` (`role_arn`, `region`, `route_server_id`, `route_server_ids`) and optionally attaches GetSecretValue on the ESO IAM role. Outputs `bgp_config_secret_name` / `bgp_config_secret_arn`. BGP recipe sets `enable_secrets_manager_iam = true` for GitOps ExternalSecret consumption.
@@ -215,6 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documentation and versioning standards
 
 ### Fixed
+- **Default GitOps bootstrap Helm repo add**: `setup_helm_repo` no longer expands an empty `auth_args` array under `set -u` (macOS bash). Gitea credentials are not sniffed on the published-chart path.
+- **`private-gitea.sh` install on macOS bash**: Admin password generation uses `openssl rand` (avoids SIGPIPE exit 141 from `tr|head` under `pipefail`); optional `version_arg` is not expanded when empty (`set -u`); `private-gitops.env` admin credential key is written with the correct underscore.
 - **Spoke ACM import reliability (#45)**: `bootstrap-gitops.sh` uses process-local ephemeral `KUBECONFIG`s (not `~/.kube/config`), asserts spoke/hub API servers before apply/skip, polls for ACM CRDs **and** `ocm-webhook` endpoints on the hub before hub-registration (CRDs alone are insufficient), polls for the ACM import secret instead of `sleep 45`, keeps import YAML in memory, and fails unless `ManagedClusterJoined=True`. Spoke mode requires hub break-glass `HUB_CREDENTIALS_SECRET` (interim until #48). Missing `ocm-webhook` Endpoints no longer aborts the wait loop under `pipefail` (treat as zero endpoints and keep polling).
 - **Per-cluster Terraform data dir**: Scripts and `Makefile.cluster` set `TF_DATA_DIR=clusters/<name>/.terraform` so init/plan/apply/destroy for different clusters can run concurrently from one checkout (no git worktree). State remains `clusters/<name>/infrastructure.tfstate` (or S3).
 - **`bootstrap-private` laptop Helm against Gitea**: Use port-forward URL (`private_gitops_work_helm_repo_url`) instead of in-cluster `cluster.local` for repo setup and chart upload.
@@ -226,6 +228,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bootstrap skipped `rosa-platform-metadata`**: `install_gitops_hub` called `good_exit` after Helm install, which exited the script before `publish_platform_metadata` / storage-class steps. Hub install now returns to `main()` so metadata is published. ConfigMap data values are quoted strings so numeric `awsAccountId` applies cleanly.
 
 ### Changed
+- **Gitea bootstrap naming**: `make cluster.<name>.bootstrap-gitea`, `BOOTSTRAP_GITEA`, and `bootstrap-gitops.sh --gitea` replace `bootstrap-private` / `BOOTSTRAP_PRIVATE` / `--private` (deprecated aliases still work). Names the in-cluster Gitea local Helm/cluster-config loop; it is not a private ROSA cluster. Helm basic auth is passed only when `BOOTSTRAP_GITEA=true`.
 - **App-of-apps Helm chart pins**: `targetRevision` values in hub bootstrap templates are Terraform variables (`app_of_apps_infrastructure_chart_version` default `0.3.0`, `app_of_apps_application_chart_version` `1.5.8`, `app_of_apps_acm_team_onboarding_chart_version` `0.4.1`) instead of hardcoded literals.
 - **BGP recipe worker size**: `clusters/bgp` default workers use `m7i.2xlarge` (was `m5.xlarge`) for GitOps/BuildConfig headroom on greenfield applies.
 - **`.gitignore` hygiene**: Ignore `__pycache__/` / `*.py[cod]` anywhere and `clusters/*/logs/` (local apply/bootstrap/destroy artifacts).

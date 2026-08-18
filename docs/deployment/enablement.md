@@ -355,7 +355,7 @@ flowchart LR
 | `cluster-bootstrap-acm-hub-registration` | `helm_chart_acm_hub_registration_version` | `0.2.2` |
 | `aws-privateca-issuer` | `helm_chart_awspca_version` | `1.6.1` |
 
-Bump module defaults in [`01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) when validated-pattern-helm-charts releases new versions (or override when calling the cluster module). Local `bootstrap-private` may still patch pins from `reference/validated-pattern-helm-charts` when the clone is ahead of Terraform defaults.
+Bump module defaults in [`01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) when validated-pattern-helm-charts releases new versions (or override when calling the cluster module). Local `bootstrap-gitea` may still patch pins from `reference/validated-pattern-helm-charts` when the clone is ahead of Terraform defaults.
 
 **Override Helm repo URL** (not exposed at root `terraform.tfvars` today):
 
@@ -367,7 +367,7 @@ Bump module defaults in [`01-variables.tf`](../../modules/infrastructure/cluster
 For day-to-day feature work across **cluster-config** and **helm-charts**, use local `reference/` clones and push to **in-cluster Gitea** so Argo CD reconciles the same way a private customer would (GitLab + Artifactory analogue — no GitHub Pages or S3):
 
 ```bash
-make cluster.<profile>.bootstrap-private
+make cluster.<profile>.bootstrap-gitea
 # edit reference/rosa-cluster-config and reference/validated-pattern-helm-charts
 make dev.private.sync DEV_CLUSTER_NAME=<profile>
 ```
@@ -1045,7 +1045,7 @@ flowchart TD
 | CMP plugin apps stuck `Sync: Unknown` (`find: command not found` or plugin sidecar errors) | Repo-server CMP image missing tools or wrong/unreachable image | Use current `gitops-tools` image; re-host to private registry and set `gitops_tools_image` / `defaultImage` in bootstrap templates — [§3c GitOps CMP tools image](#gitops-cmp-tools-container-image) |
 | Repo-server can't pull CMP sidecar image | `ghcr.io` blocked (egress-zero, registry policy) | Mirror `gitops-tools` to ECR; update `defaultImage` in [hub-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/hub-values.yaml.tftpl) and [spoke-values.yaml.tftpl](../../modules/infrastructure/cluster/templates/spoke-values.yaml.tftpl) |
 | Wrong cluster-config branch synced | `gitops_git_target_revision` still `HEAD` or chart older than `0.5.18` | Set `gitops_git_target_revision` in tfvars and use `cluster-bootstrap` >= `0.5.18` |
-| Helm chart version mismatch | Terraform pin defaults out of sync with published Helm repo or Gitea upload | Bump defaults in [cluster `01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) (`helm_chart_version`, `app_of_apps_*_chart_version`, etc.); see §3c version pinning table. For `bootstrap-private`, values are also patched from `reference/validated-pattern-helm-charts` `Chart.yaml` when the clone is ahead. |
+| Helm chart version mismatch | Terraform pin defaults out of sync with published Helm repo or Gitea upload | Bump defaults in [cluster `01-variables.tf`](../../modules/infrastructure/cluster/01-variables.tf) (`helm_chart_version`, `app_of_apps_*_chart_version`, etc.); see §3c version pinning table. For `bootstrap-gitea`, values are also patched from `reference/validated-pattern-helm-charts` `Chart.yaml` when the clone is ahead. |
 | ACM examples default to `noacm` | `acm_mode` not in example tfvars | Set module variable; use `bootstrap-spoke` target |
 | Worker nodes not ready | Bootstrap waits for ≥2 Ready workers on single-AZ (60 min timeout for `.metal`); long NotReady on bare metal may need `default_auto_repair = false` | Set in `terraform.tfvars`; override `WORKER_READY_MAX_ATTEMPTS` if needed |
 | Cluster login fails (private) | No VPN to private API | Start Client VPN: `make cluster.<name>.vpn-start` |

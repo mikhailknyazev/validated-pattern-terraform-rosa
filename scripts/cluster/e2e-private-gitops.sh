@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# E2E: fresh cluster → bootstrap-private → dev.private.sync → Argo verification
+# E2E: fresh cluster → bootstrap-gitea → dev.private.sync → Argo verification
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -36,8 +36,8 @@ log "E2E private GitOps start (profile=${PROFILE}, cluster=${CLUSTER_NAME})"
 log "Step 1/5: apply infrastructure"
 make "cluster.${PROFILE}.apply"
 
-log "Step 2/5: bootstrap-private"
-make "cluster.${PROFILE}.bootstrap-private"
+log "Step 2/5: bootstrap-gitea"
+make "cluster.${PROFILE}.bootstrap-gitea"
 
 log "Step 3/5: dev.private.preflight"
 make dev.private.preflight "DEV_CLUSTER_NAME=${PROFILE}"

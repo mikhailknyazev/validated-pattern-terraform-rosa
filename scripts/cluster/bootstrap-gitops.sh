@@ -33,15 +33,24 @@ BOOTSTRAP_KUBECONFIG_PRIMARY=""
 BOOTSTRAP_KUBECONFIG_HUB=""
 BOOTSTRAP_KUBECONFIG_SPOKE=""
 
-# Private GitOps (in-cluster Gitea) and skip-Argo dev bootstrap
-BOOTSTRAP_PRIVATE="${BOOTSTRAP_PRIVATE:-false}"
+# In-cluster Gitea local-dev loop (not a private ROSA cluster) and skip-Argo bootstrap
+BOOTSTRAP_GITEA="${BOOTSTRAP_GITEA:-false}"
 SKIP_GITOPS="${SKIP_GITOPS:-false}"
+
+warn_bootstrap_private_deprecated() {
+	echo "WARNING: --private / BOOTSTRAP_PRIVATE is deprecated; use --gitea / BOOTSTRAP_GITEA (in-cluster Gitea local-dev loop, not a private ROSA cluster)." >&2
+}
 
 parse_bootstrap_cli() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
+		--gitea)
+			BOOTSTRAP_GITEA=true
+			shift
+			;;
 		--private)
-			BOOTSTRAP_PRIVATE=true
+			warn_bootstrap_private_deprecated
+			BOOTSTRAP_GITEA=true
 			shift
 			;;
 		--skip-gitops)
@@ -53,7 +62,14 @@ parse_bootstrap_cli() {
 			;;
 		esac
 	done
-	export BOOTSTRAP_PRIVATE SKIP_GITOPS
+	# Env alias from older Make / scripts
+	if [[ "${BOOTSTRAP_PRIVATE:-false}" == "true" ]]; then
+		if [[ "${BOOTSTRAP_GITEA}" != "true" ]]; then
+			warn_bootstrap_private_deprecated
+		fi
+		BOOTSTRAP_GITEA=true
+	fi
+	export BOOTSTRAP_GITEA SKIP_GITOPS
 }
 
 # --- Error Handling Configuration ---
@@ -577,8 +593,13 @@ setup_helm_repo() {
 
 	echo "Setting up Helm repository: ${repo_name} at ${repo_url}"
 
-	local auth_args=()
-	if [[ -n "${GITEA_ADMIN_USER:-}" && -n "${GITEA_ADMIN_PASSWORD:-}" ]]; then
+	# Helm basic auth only for the Gitea local-dev loop. Default bootstrap uses the
+	# public chart repo and must not send leftover GITEA_ADMIN_* from the shell.
+	local -a auth_args=()
+	if [[ "${BOOTSTRAP_GITEA}" == "true" ]]; then
+		if [[ -z "${GITEA_ADMIN_USER:-}" || -z "${GITEA_ADMIN_PASSWORD:-}" ]]; then
+			bad_exit "BOOTSTRAP_GITEA=true requires GITEA_ADMIN_USER and GITEA_ADMIN_PASSWORD (from Gitea prepare / private-gitops.env)."
+		fi
 		auth_args=(--username "${GITEA_ADMIN_USER}" --password "${GITEA_ADMIN_PASSWORD}")
 	fi
 
@@ -588,20 +609,28 @@ setup_helm_repo() {
 		helm repo remove "${repo_name}" 2>/dev/null || true
 	fi
 	echo "Adding Helm repository ${repo_name}..."
-	helm repo add "${repo_name}" "${repo_url}" "${auth_args[@]}" || {
-		echo "Add failed, trying to update existing repo..."
-		helm repo update "${repo_name}" || true
-	}
+	# bash 3.2 + set -u: do not expand an empty "${arr[@]}"
+	if [[ ${#auth_args[@]} -gt 0 ]]; then
+		helm repo add "${repo_name}" "${repo_url}" "${auth_args[@]}" || {
+			echo "Add failed, trying to update existing repo..."
+			helm repo update "${repo_name}" || true
+		}
+	else
+		helm repo add "${repo_name}" "${repo_url}" || {
+			echo "Add failed, trying to update existing repo..."
+			helm repo update "${repo_name}" || true
+		}
+	fi
 
 	echo "Updating all Helm repositories..."
 	helm repo update
 }
 
-# --- In-cluster Gitea (private GitOps plane) ---
-bootstrap_private_gitops_prepare() {
+# --- In-cluster Gitea (local Helm / cluster-config loop) ---
+bootstrap_gitea_prepare() {
 	local profile="${CLUSTER_PROFILE:-}"
 	if [[ -z "${profile}" ]]; then
-		bad_exit "CLUSTER_PROFILE must be set for --private bootstrap (Makefile cluster directory name, e.g. public)"
+		bad_exit "CLUSTER_PROFILE must be set for --gitea bootstrap (Makefile cluster directory name, e.g. public)"
 	fi
 
 	echo "=== Private GitOps: installing Gitea and seeding Git + Helm packages ==="
@@ -675,14 +704,14 @@ configure_argocd_private_repos() {
 	echo "✓ Argo CD Gitea repository secrets applied in ${ns}"
 }
 
-# Laptop bootstrap cannot pull charts from Gitea index URLs (cluster.local). Use local chart dirs when --private.
+# Laptop bootstrap cannot pull charts from Gitea index URLs (cluster.local). Use local chart dirs when --gitea.
 bootstrap_helm_chart_ref() {
 	local chart_name="${1:?}"
 	local project_root charts_clone chart_dir
 	project_root="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 	charts_clone="${REFERENCE_HELM_CHARTS:-${project_root}/reference/validated-pattern-helm-charts}"
 	chart_dir="${charts_clone}/charts/${chart_name}"
-	if [[ "${BOOTSTRAP_PRIVATE}" == "true" && -d "${chart_dir}" ]]; then
+	if [[ "${BOOTSTRAP_GITEA}" == "true" && -d "${chart_dir}" ]]; then
 		echo "${chart_dir}"
 		return 0
 	fi
@@ -1242,7 +1271,7 @@ main() {
 	echo "#########################################"
 	echo "GitOps Bootstrap Script"
 	echo "Current Date: $(date)"
-	echo "BOOTSTRAP_PRIVATE=${BOOTSTRAP_PRIVATE} SKIP_GITOPS=${SKIP_GITOPS}"
+	echo "BOOTSTRAP_GITEA=${BOOTSTRAP_GITEA} SKIP_GITOPS=${SKIP_GITOPS}"
 	echo "#########################################"
 
 	# Validate environment variables
@@ -1280,8 +1309,8 @@ main() {
 	# Worker nodes must exist before Helm pre-install hooks run (installplan-approver Job)
 	wait_for_worker_nodes
 
-	if [[ "${BOOTSTRAP_PRIVATE}" == "true" ]]; then
-		bootstrap_private_gitops_prepare
+	if [[ "${BOOTSTRAP_GITEA}" == "true" ]]; then
+		bootstrap_gitea_prepare
 	fi
 
 	if [[ "${SKIP_GITOPS}" == "true" ]]; then
@@ -1314,7 +1343,7 @@ main() {
 		;;
 	esac
 
-	if [[ "${BOOTSTRAP_PRIVATE}" == "true" ]]; then
+	if [[ "${BOOTSTRAP_GITEA}" == "true" ]]; then
 		configure_argocd_private_repos
 	fi
 

@@ -4,7 +4,7 @@
 # Usage:
 #   scripts/dev/private-sync.sh preflight|sync-config|sync-charts|sync|help
 #
-# Requires clusters/<cluster>/private-gitops.env (from bootstrap-private or private-gitea.sh install).
+# Requires clusters/<cluster>/private-gitops.env (from bootstrap-gitea or private-gitea.sh install).
 
 set -euo pipefail
 
@@ -78,7 +78,7 @@ cmd_preflight() {
 
 	if ! curl -fsS -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
 		"$(private_gitops_work_base_url)/api/v1/version" >/dev/null 2>&1; then
-		error "Cannot reach Gitea — run bootstrap-private or check port-forward"
+		error "Cannot reach Gitea — run bootstrap-gitea or check port-forward"
 		missing=1
 	else
 		success "Gitea reachable: $(private_gitops_work_base_url)"

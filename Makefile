@@ -104,7 +104,7 @@ help: ## Show this help message
 	@echo "  make sh-lint-fix          Show ShellCheck issues (interactive fix)"
 	@echo ""
 	@echo "$(GREEN)Local multi-repo dev (Gitea + Argo — see docs/guides/local-multi-repo-dev.md):$(NC)"
-	@echo "  make cluster.<profile>.bootstrap-private   Bootstrap with in-cluster Gitea"
+	@echo "  make cluster.<profile>.bootstrap-gitea     Bootstrap with in-cluster Gitea (local Helm/cluster-config loop)"
 	@echo "  make dev.private.preflight                 Check Gitea env and reference clones"
 	@echo "  make dev.private.sync                      Push cluster-config + charts to Gitea"
 	@echo "  make dev.private.sync-config               Push reference/rosa-cluster-config only"

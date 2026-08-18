@@ -42,19 +42,21 @@ This:
 For private-customer-style dev without pushing to GitHub/Pages:
 
 ```bash
-make cluster.<name>.bootstrap-private
+make cluster.<name>.bootstrap-gitea
 make dev.private.sync DEV_CLUSTER_NAME=<name>
 ```
 
-`bootstrap-private` runs this script with `--private`, which:
+`bootstrap-gitea` runs this script with `--gitea`, which:
 
 1. Installs in-cluster Gitea (`private-gitea.sh install`; skips Helm upgrade when Gitea is already healthy)
 2. Seeds Git + Helm from `reference/` clones when present (bootstrap charts uploaded first; retries on Gitea HTTP 500)
 3. Uses port-forward (`127.0.0.1:13000`) for laptop Helm/repo operations (not in-cluster `cluster.local` URLs)
 4. Patches bootstrap values to Gitea URLs and syncs `targetRevision` from reference `Chart.yaml` when ahead of Terraform
-5. Installs `cluster-bootstrap` from local chart path when `--private` (Gitea index embeds unreachable internal URLs)
+5. Installs `cluster-bootstrap` from local chart path when `--gitea` (Gitea index embeds unreachable internal URLs)
 6. Wires Argo CD to in-cluster Git/Helm URLs
 7. Writes `clusters/<name>/private-gitops.env` (gitignored)
+
+`make cluster.<name>.bootstrap-private` and `--private` / `BOOTSTRAP_PRIVATE` remain as deprecated aliases.
 
 See [local-multi-repo-dev.md](../../docs/guides/local-multi-repo-dev.md).
 
@@ -72,7 +74,8 @@ Equivalent to `bootstrap-gitops.sh --skip-gitops`.
 
 | Flag | Description |
 |------|-------------|
-| `--private` | Install Gitea, seed from `reference/`, point Argo at in-cluster URLs |
+| `--gitea` | Install Gitea, seed from `reference/`, point Argo at in-cluster URLs (local Helm/cluster-config loop; not a private ROSA cluster) |
+| `--private` | Deprecated alias for `--gitea` |
 | `--skip-gitops` | Publish platform metadata only; skip Helm GitOps bootstrap |
 
 ### Standalone Execution

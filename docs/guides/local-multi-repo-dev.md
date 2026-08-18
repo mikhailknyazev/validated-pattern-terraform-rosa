@@ -12,7 +12,7 @@ See also: [Enablement Guide](../deployment/enablement.md) (org adoption), [Platf
 
 | Goal | Workflow |
 |------|----------|
-| Local dev with Argo-faithful private GitOps (recommended) | **`bootstrap-private`** + `dev.private.sync` (this guide) |
+| Local dev with Argo + in-cluster Gitea (recommended) | **`bootstrap-gitea`** + `dev.private.sync` (this guide) |
 | Merge-ready PR / production adoption | Push branches in each repo → canonical Argo sync |
 | Public GitHub dev (no Gitea) | Normal `bootstrap` → push to GitHub → Argo |
 | Optional: fastest single-chart hack (no Gitea/Argo) | [Optional escape hatch](#optional-fastest-iteration-without-gitea) |
@@ -89,10 +89,12 @@ flowchart LR
 ## One-time bootstrap
 
 ```bash
-make cluster.<profile>.bootstrap-private
+make cluster.<profile>.bootstrap-gitea
 ```
 
-Runs `bootstrap-gitops.sh --private`, which:
+`bootstrap-private` is a deprecated alias. This target is the in-cluster Gitea local-dev loop — it is independent of a private ROSA cluster (`network_type` / `private = true`).
+
+Runs `bootstrap-gitops.sh --gitea`, which:
 
 1. Installs **Gitea** (namespace `gitea`, 10Gi PVC)
 2. Creates org **`gitops`**, repo **`rosa-cluster-config`**
@@ -238,13 +240,13 @@ make dev.public.verify
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `Private GitOps env not found` | Bootstrap-private not run | `make cluster.<profile>.bootstrap-private` |
+| `Private GitOps env not found` | `bootstrap-gitea` not run | `make cluster.<profile>.bootstrap-gitea` |
 | Gitea curl fails | Pod not ready / no port-forward | `oc get pods -n gitea`; `oc port-forward svc/gitea-http -n gitea 13000:3000` |
 | Argo cannot pull charts | Missing repo secret | `oc get secret -n openshift-gitops -l argocd.argoproj.io/secret-type=repository` |
 | Chart upload fails | Missing chart dir or helm package error | Check sync warnings; some charts need remote subchart deps |
 | `infrastructure.yaml not found` | `gitops_git_path` mismatch | Align tfvars with `reference/rosa-cluster-config/<path>/` |
 | ESO IRSA empty | Metadata missing | `oc get cm rosa-platform-metadata -n openshift-gitops` |
-| Version pin drift | Terraform defaults behind reference clone or Gitea upload | Bump cluster-module variables per [AGENTS.md](../../AGENTS.md); `bootstrap-private` patches `targetRevision` from reference `Chart.yaml` during dev |
+| Version pin drift | Terraform defaults behind reference clone or Gitea upload | Bump cluster-module variables per [AGENTS.md](../../AGENTS.md); `bootstrap-gitea` patches `targetRevision` from reference `Chart.yaml` during dev |
 
 ---
 
@@ -256,8 +258,8 @@ make dev.public.verify
 | `scripts/dev/private-sync.sh` | Push config/charts to Gitea |
 | `scripts/dev/private-gitops-lib.sh` | Shared helpers |
 | `scripts/dev/public-local-loop.sh` | Optional escape hatch (`apply-local`, `render`) |
-| `scripts/cluster/bootstrap-gitops.sh` | `--private`, `--skip-gitops` |
-| `scripts/cluster/e2e-private-gitops.sh` | End-to-end regression: apply → `bootstrap-private` → sync → Argo verify |
+| `scripts/cluster/bootstrap-gitops.sh` | `--gitea`, `--skip-gitops` |
+| `scripts/cluster/e2e-private-gitops.sh` | End-to-end regression: apply → `bootstrap-gitea` → sync → Argo verify |
 
 ---
 

@@ -583,7 +583,7 @@ Do **not** treat docs as optional follow-up. Before considering the work done, s
 |----------|-----------------|--------------|
 | Getting started | `docs/getting-started/` (quick-start, authentication, …) | Operator workflow, credentials, or defaults change |
 | Enablement guide | `docs/deployment/enablement.md` | End-to-end deploy/bootstrap/login, tfvars recipes, credential hygiene |
-| Local multi-repo dev | `docs/guides/local-multi-repo-dev.md` | Gitea + Argo primary loop (`bootstrap-private`, `dev.private.sync`); optional `dev.public.apply-local` |
+| Local multi-repo dev | `docs/guides/local-multi-repo-dev.md` | Gitea + Argo primary loop (`bootstrap-gitea`, `dev.private.sync`); optional `dev.public.apply-local` |
 | CI/CD | `docs/CI_CD.md` / `docs/guides/ci-cd.md` | Env vars, pipeline secrets, script contracts |
 | Scripts docs | `scripts/README.md`, `scripts/**/README*.md` | Script usage, required env vars, Make targets |
 | Module / cluster docs | `modules/**/README.md`, `clusters/README.md` | Module interface or example cluster patterns |
@@ -1584,7 +1584,7 @@ Before committing code, ensure:
    - **Purpose**: Bootstrap and app-of-apps charts (`cluster-bootstrap`, `app-of-apps-infrastructure`, `external-secrets-operator`, etc.)
    - **Source**: https://github.com/rh-mobb/validated-pattern-helm-charts
    - **When to Reference**: Chart template changes, platform-metadata hooks, ESO install patterns
-   - **Local dev**: Primary loop — `dev.private.sync` after `bootstrap-private`; optional `dev.public.apply-local` escape hatch
+   - **Local dev**: Primary loop — `dev.private.sync` after `bootstrap-gitea`; optional `dev.public.apply-local` escape hatch
 
 ### Local multi-repo GitOps development
 
@@ -1592,7 +1592,7 @@ Before committing code, ensure:
 
 **Rules for agents:**
 
-1. **Primary loop:** `make cluster.<profile>.bootstrap-private` → edit `reference/*` → `make dev.private.sync` → Argo sync (in-cluster Gitea = private customer Git + Helm plane).
+1. **Primary loop:** `make cluster.<profile>.bootstrap-gitea` → edit `reference/*` → `make dev.private.sync` → Argo sync (in-cluster Gitea = customer Git + Helm analogue). `bootstrap-private` is a deprecated alias.
 2. **Clone layout:** `reference/rosa-cluster-config` + `reference/validated-pattern-helm-charts` (separate git remotes; never commit into this repo).
 3. **Bootstrap still required once:** publishes `rosa-platform-metadata` — ESO charts depend on it.
 4. **Do not hardcode account ARNs** in portable cluster-config — use `platformMetadata.enabled: true` per [platform-metadata-irsa.md](docs/architecture/platform-metadata-irsa.md).
@@ -1617,7 +1617,7 @@ Before committing code, ensure:
 5. **CHANGELOG**: add/update an `[Unreleased]` entry in this repo for the same PR (chart repo has its own changelog).
 6. **Verify source of truth**: published [`index.yaml`](https://rh-mobb.github.io/validated-pattern-helm-charts/index.yaml) or local `reference/validated-pattern-helm-charts/charts/<chart>/Chart.yaml` `version:` field.
 
-`bootstrap-private` may patch `targetRevision` from reference `Chart.yaml` during local dev when the clone is ahead of Terraform — that is a dev-loop escape hatch, **not** a substitute for bumping Terraform defaults before merge.
+`bootstrap-gitea` may patch `targetRevision` from reference `Chart.yaml` during local dev when the clone is ahead of Terraform — that is a dev-loop escape hatch, **not** a substitute for bumping Terraform defaults before merge.
 
 ### Using Reference Repositories
 

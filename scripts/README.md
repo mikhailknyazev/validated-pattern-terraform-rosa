@@ -127,7 +127,7 @@ make cluster.byo-vpc.validate-network
 make cluster.<cluster-name>.bootstrap
 
 # Local dev: Gitea + Argo (primary loop)
-make cluster.<cluster-name>.bootstrap-private
+make cluster.<cluster-name>.bootstrap-gitea
 make dev.private.sync DEV_CLUSTER_NAME=<cluster-name>
 
 # Platform metadata only (optional escape hatch before apply-local)
@@ -157,7 +157,7 @@ make dev.public.preflight DEV_CLUSTER_NAME=public   # optional escape hatch
 make dev.public.apply-local DEV_CLUSTER_NAME=public
 ```
 
-Requires `clusters/<profile>/private-gitops.env` (written by `bootstrap-private`). See [docs/guides/local-multi-repo-dev.md](../docs/guides/local-multi-repo-dev.md).
+Requires `clusters/<profile>/private-gitops.env` (written by `bootstrap-gitea`). See [docs/guides/local-multi-repo-dev.md](../docs/guides/local-multi-repo-dev.md).
 
 **Output:**
 - Creates values file at `clusters/<cluster-dir>/cluster-bootstrap-values.yaml` for inspection

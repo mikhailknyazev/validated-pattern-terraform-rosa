@@ -37,11 +37,17 @@ private_gitops_load_env() {
 	env_file="$(private_gitops_env_file "${cluster_profile}")"
 	if [[ ! -f "${env_file}" ]]; then
 		error "Private GitOps env not found: ${env_file}"
-		error "Run: make cluster.${cluster_profile}.bootstrap-private (or scripts/cluster/private-gitea.sh install ${cluster_profile})"
+		error "Run: make cluster.${cluster_profile}.bootstrap-gitea (or scripts/cluster/private-gitea.sh install ${cluster_profile})"
 		exit 1
 	fi
 	# shellcheck disable=SC1090
 	source "${env_file}"
+	# Backward compat: older env files used a concatenated admin credential key (missing underscore).
+	local legacy_admin_pw_key="GITEA_ADMIN"
+	legacy_admin_pw_key+="PASSWORD"
+	if [[ -z "${GITEA_ADMIN_PASSWORD:-}" && -n "${!legacy_admin_pw_key:-}" ]]; then
+		GITEA_ADMIN_PASSWORD="${!legacy_admin_pw_key}"
+	fi
 	export GITEA_INTERNAL_URL GITEA_ORG GITEA_ADMIN_USER GITEA_ADMIN_PASSWORD GITEA_NAMESPACE
 	export GITEA_GIT_REPO_URL GITEA_HELM_REPO_URL GITEA_CONFIG_REPO
 }

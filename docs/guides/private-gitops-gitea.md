@@ -5,7 +5,7 @@ This guide has been consolidated into **[Local Multi-Repo Development](local-mul
 The primary local development workflow is:
 
 ```bash
-make cluster.<profile>.bootstrap-private
+make cluster.<profile>.bootstrap-gitea
 make dev.private.sync DEV_CLUSTER_NAME=<profile>
 ```
 

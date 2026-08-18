@@ -171,7 +171,7 @@ git clone https://github.com/rh-mobb/validated-pattern-helm-charts.git validated
 cd ..
 ```
 
-**Local multi-repo development:** After cloning cluster-config and helm-charts under `reference/`, use `make cluster.<profile>.bootstrap-private` and `make dev.private.sync`. See [local-multi-repo-dev.md](docs/guides/local-multi-repo-dev.md).
+**Local multi-repo development:** After cloning cluster-config and helm-charts under `reference/`, use `make cluster.<profile>.bootstrap-gitea` and `make dev.private.sync`. See [local-multi-repo-dev.md](docs/guides/local-multi-repo-dev.md).
 
 **Additional Reference Files:**
 
