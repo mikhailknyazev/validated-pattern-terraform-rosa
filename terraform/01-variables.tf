@@ -261,6 +261,21 @@ variable "control_plane_log_cloudwatch_log_group_name" {
   nullable    = true
 }
 
+variable "control_plane_log_cloudwatch_retention_days" {
+  description = "Number of days to retain CloudWatch control plane logs. Valid values: 0 (never expire), 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653."
+  type        = number
+  default     = 30
+  nullable    = false
+
+  validation {
+    condition = contains(
+      [0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653],
+      var.control_plane_log_cloudwatch_retention_days
+    )
+    error_message = "Retention days must be one of: 0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653."
+  }
+}
+
 variable "control_plane_log_s3_enabled" {
   description = "Enable S3 destination for control plane log forwarding. Default enabled as more cost-effective than CloudWatch."
   type        = bool

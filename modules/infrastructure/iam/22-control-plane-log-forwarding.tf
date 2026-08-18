@@ -14,7 +14,10 @@
 resource "aws_iam_role" "control_plane_log_forwarding" {
   count = var.enable_control_plane_log_forwarding ? 1 : 0
 
-  name                 = substr("${var.cluster_name}-CustomerLogDistribution-RH", 0, 64)
+  # IMPORTANT: ROSA requires the role name to START with "CustomerLogDistribution"
+  # per the documented prefix pattern: arn:aws:iam::*:role/CustomerLogDistribution-*
+  # Appending cluster name as suffix for uniqueness across multiple clusters.
+  name                 = substr("CustomerLogDistribution-${var.cluster_name}", 0, 64)
   permissions_boundary = var.custom_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
@@ -31,7 +34,7 @@ resource "aws_iam_role" "control_plane_log_forwarding" {
   })
 
   tags = merge(local.common_tags, {
-    Name                   = "${var.cluster_name}-CustomerLogDistribution-RH"
+    Name                   = "CustomerLogDistribution-${var.cluster_name}"
     Purpose                = "ControlPlaneLogForwarding"
     ManagedBy              = "Terraform"
     persists_through_sleep = "true"

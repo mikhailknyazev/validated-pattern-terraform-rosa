@@ -54,11 +54,12 @@ additional_machine_pools = {
 }
 
 # Optional Features - minimal for lab/demo
-persists_through_sleep        = true
-enable_persistent_dns_domain  = false
-enable_audit_logging          = false
-enable_cert_manager_iam       = false
-enable_termination_protection = false
+persists_through_sleep               = true
+enable_persistent_dns_domain         = false
+enable_control_plane_log_forwarding  = true
+control_plane_log_cloudwatch_enabled = true
+enable_cert_manager_iam              = false
+enable_termination_protection        = false
 
 # Debug / Timing
 enable_timing = true
