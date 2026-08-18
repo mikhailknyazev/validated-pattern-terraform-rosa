@@ -259,6 +259,7 @@ module "cluster" {
   control_plane_log_s3_applications           = var.control_plane_log_s3_applications
   control_plane_log_cloudwatch_enabled        = var.control_plane_log_cloudwatch_enabled
   control_plane_log_cloudwatch_log_group_name = var.control_plane_log_cloudwatch_log_group_name
+  control_plane_log_cloudwatch_retention_days = var.control_plane_log_cloudwatch_retention_days
   control_plane_log_s3_enabled                = var.control_plane_log_s3_enabled
   control_plane_log_s3_bucket_name            = var.control_plane_log_s3_bucket_name
   control_plane_log_s3_bucket_prefix          = var.control_plane_log_s3_bucket_prefix

@@ -15,8 +15,7 @@ resource "aws_cloudwatch_log_group" "control_plane_logs" {
 
   name = var.control_plane_log_cloudwatch_log_group_name != null ? var.control_plane_log_cloudwatch_log_group_name : "${var.cluster_name}-control-plane-logs"
 
-  # Optional: Set retention period (default is never expire)
-  # retention_in_days = 30
+  retention_in_days = var.control_plane_log_cloudwatch_retention_days
 
   tags = merge(local.common_tags, {
     Name                   = var.control_plane_log_cloudwatch_log_group_name != null ? var.control_plane_log_cloudwatch_log_group_name : "${var.cluster_name}-control-plane-logs"

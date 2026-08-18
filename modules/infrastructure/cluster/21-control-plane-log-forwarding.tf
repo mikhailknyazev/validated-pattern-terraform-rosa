@@ -26,7 +26,11 @@ locals {
 
 # CloudWatch log forwarder - created when CloudWatch destination is enabled
 resource "rhcs_log_forwarder" "cloudwatch" {
-  count = local.persists_through_sleep && var.enable_control_plane_log_forwarding && var.control_plane_log_cloudwatch_enabled && var.control_plane_log_forwarding_role_arn != null ? 1 : 0
+  # NOTE: Do not use `var.control_plane_log_forwarding_role_arn != null` here.
+  # The ARN comes from the IAM module and is unknown at plan time, causing
+  # "Invalid count argument" errors. The boolean variables are sufficient to
+  # gate creation — the IAM module creates the role when these same booleans are true.
+  count = local.persists_through_sleep && var.enable_control_plane_log_forwarding && var.control_plane_log_cloudwatch_enabled ? 1 : 0
 
   cluster      = one(rhcs_cluster_rosa_hcp.main[*].id)
   applications = length(var.control_plane_log_cloudwatch_applications) > 0 ? var.control_plane_log_cloudwatch_applications : null
@@ -42,7 +46,9 @@ resource "rhcs_log_forwarder" "cloudwatch" {
 
 # S3 log forwarder - created when S3 destination is enabled
 resource "rhcs_log_forwarder" "s3" {
-  count = local.persists_through_sleep && var.enable_control_plane_log_forwarding && var.control_plane_log_s3_enabled && length(aws_s3_bucket.control_plane_logs) > 0 ? 1 : 0
+  # NOTE: Use boolean variables only — referencing resource length can cause
+  # plan-time unknowns. The S3 bucket is created when these same booleans are true.
+  count = local.persists_through_sleep && var.enable_control_plane_log_forwarding && var.control_plane_log_s3_enabled ? 1 : 0
 
   cluster      = one(rhcs_cluster_rosa_hcp.main[*].id)
   applications = length(var.control_plane_log_s3_applications) > 0 ? var.control_plane_log_s3_applications : null
