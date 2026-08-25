@@ -866,6 +866,13 @@ variable "enable_identity_provider" {
   nullable    = false
 }
 
+variable "external_auth_providers_enabled" {
+  description = "Enable external authentication providers on the ROSA HCP cluster. When true, the RHCS API rejects rhcs_identity_provider resources. Create-time only (immutable after cluster creation)."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
 variable "admin_username" {
   description = "Break-glass admin username for identity provider and credentials secret. Default: 'admin'"
   type        = string

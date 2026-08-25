@@ -25,7 +25,7 @@ check-cluster:
 	@$(SCRIPT_DIR)/utils/check-cluster.sh $(CLUSTER_NAME)
 
 .PHONY: help init plan apply destroy destroy_force sleep fmt validate clean
-.PHONY: show-endpoints show-credentials show-timing login verify
+.PHONY: show-endpoints show-credentials show-timing login break-glass-login verify
 .PHONY: tunnel-start tunnel-stop tunnel-status bastion-connect
 .PHONY: vpn-config vpn-start vpn-stop vpn-status bootstrap bootstrap-gitea bootstrap-private bootstrap-skip-gitops bootstrap-spoke teardown-spoke ensure-tunnel
 .PHONY: validate validate-terraform validate-account validate-network validate-prereqs
@@ -64,6 +64,7 @@ help: ## Show this help message
 	echo "  make cluster.$(CLUSTER_NAME).show-credentials Show admin credentials and endpoints"; \
 	echo "  make cluster.$(CLUSTER_NAME).show-timing      Show cluster creation timing"; \
 	echo "  make cluster.$(CLUSTER_NAME).login             Login to cluster using oc CLI"; \
+	echo "  make cluster.$(CLUSTER_NAME).break-glass-login  Temporary admin via ROSA break-glass credential (external auth)"; \
 	echo "  make cluster.$(CLUSTER_NAME).verify           Verify cluster deployment and GitOps"; \
 	echo ""; \
 	echo "$(GREEN)Pre-deployment validation:$(NC)"; \
@@ -124,6 +125,7 @@ sleep: check-cluster
 
 # GitOps operations
 # Creates short-lived bootstrap HTPasswd admin (#29), runs bootstrap, always tears it down.
+# For external-auth clusters, uses ROSA break-glass credential instead of HTPasswd.
 # Teardown is explicit (not EXIT trap) so Make reports the GitOps exit code, not destroy's.
 bootstrap: init ensure-tunnel
 	@echo "$(BLUE)Bootstrapping GitOps operator for $(CLUSTER_NAME)...$(NC)"
@@ -146,15 +148,23 @@ bootstrap: init ensure-tunnel
 		export BOOTSTRAP_VALUES_FILE="$$PWD/../clusters/$(CLUSTER_NAME)/cluster-bootstrap-values.yaml" && \
 		echo "$(BLUE)Exporting environment variables from Terraform outputs...$(NC)" && \
 		eval "$$(terraform output -no-color -raw gitops_bootstrap_env_exports 2>/dev/null)" && \
-		echo "$(BLUE)Creating short-lived bootstrap HTPasswd admin...$(NC)" && \
-		BOOTSTRAP_EXPORTS=$$(../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) create) || exit 1 && \
-		eval "$$BOOTSTRAP_EXPORTS" && \
-		echo "$(BLUE)Running GitOps bootstrap script: $$SCRIPT_PATH$(NC)" && \
-		set +e && \
-		bash "$$SCRIPT_PATH"; GITOPS_RC=$$?; \
-		set -e && \
-		echo "$(YELLOW)Tearing down bootstrap admin...$(NC)" && \
-		../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) destroy || true && \
+		EXTERNAL_AUTH=$$(terraform output -no-color -raw external_auth_providers_enabled 2>/dev/null || echo "false") && \
+		if [ "$$EXTERNAL_AUTH" = "true" ]; then \
+			echo "$(BLUE)External auth enabled — using ROSA break-glass credential for bootstrap...$(NC)" && \
+			export BOOTSTRAP_SCRIPT_PATH="$$SCRIPT_PATH" && \
+			../$(SCRIPT_DIR)/cluster/bootstrap-external-auth.sh $(CLUSTER_NAME); \
+			GITOPS_RC=$$?; \
+		else \
+			echo "$(BLUE)Creating short-lived bootstrap HTPasswd admin...$(NC)" && \
+			BOOTSTRAP_EXPORTS=$$(../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) create) || exit 1 && \
+			eval "$$BOOTSTRAP_EXPORTS" && \
+			echo "$(BLUE)Running GitOps bootstrap script: $$SCRIPT_PATH$(NC)" && \
+			set +e && \
+			bash "$$SCRIPT_PATH"; GITOPS_RC=$$?; \
+			set -e && \
+			echo "$(YELLOW)Tearing down bootstrap admin...$(NC)" && \
+			../$(SCRIPT_DIR)/cluster/bootstrap-admin.sh $(CLUSTER_NAME) destroy || true; \
+		fi && \
 		if [ "$$GITOPS_RC" -ne 0 ]; then \
 			echo "$(YELLOW)GitOps bootstrap failed (exit $$GITOPS_RC). Check the output above for details.$(NC)"; \
 			exit "$$GITOPS_RC"; \
@@ -327,6 +337,9 @@ show-timing: check-cluster
 # Read terraform outputs only (no init). Fails clearly if state/outputs are missing.
 login: check-cluster ensure-tunnel
 	@$(SCRIPT_DIR)/info/login.sh $(CLUSTER_NAME)
+
+break-glass-login: init
+	@$(SCRIPT_DIR)/info/break-glass-login.sh $(CLUSTER_NAME)
 
 verify: check-cluster ## Verify cluster deployment, GitOps operator, and ApplicationSet
 	@if ! command -v python3 >/dev/null 2>&1; then \

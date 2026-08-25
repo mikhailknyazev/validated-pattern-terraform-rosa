@@ -114,6 +114,13 @@ check "byo_vpc_required_vars" {
   }
 }
 
+check "external_auth_cluster_admin_conflict" {
+  assert {
+    condition     = !(var.external_auth_providers_enabled == true && var.enable_cluster_admin == true)
+    error_message = "enable_cluster_admin cannot be true when external_auth_providers_enabled is true. External auth providers reject rhcs_identity_provider resources."
+  }
+}
+
 # Generate random suffix for resource naming (reusable across multiple modules)
 # This ensures consistency - all resources from the same cluster share the same suffix
 # Persists through sleep operation (not gated by persists_through_sleep)
@@ -232,9 +239,13 @@ module "cluster" {
   fips               = var.fips
 
   # Break-glass HTPasswd (optional). Bootstrap uses module.bootstrap_admin instead (#29).
-  enable_identity_provider     = var.enable_cluster_admin && var.persists_through_sleep
+  # Disabled when external_auth_providers_enabled — RHCS API rejects rhcs_identity_provider.
+  enable_identity_provider     = var.enable_cluster_admin && var.persists_through_sleep && !(var.external_auth_providers_enabled == true)
   admin_username               = var.admin_username
-  admin_password_for_bootstrap = var.enable_cluster_admin ? (var.admin_password_override != null ? var.admin_password_override : random_password.admin_password[0].result) : null
+  admin_password_for_bootstrap = var.enable_cluster_admin && !(var.external_auth_providers_enabled == true) ? (var.admin_password_override != null ? var.admin_password_override : random_password.admin_password[0].result) : null
+
+  # External authentication providers (create-time only, immutable after creation)
+  external_auth_providers_enabled = var.external_auth_providers_enabled
 
   # KMS keys from IAM module
   kms_key_arn      = module.iam.ebs_kms_key_arn
@@ -381,7 +392,7 @@ module "cluster_timing" {
 # ({cluster_name}-credentials) created in modules/infrastructure/cluster/30-identity-provider.tf.
 # Fixes #28: previously a duplicate rosa-hcp-{cluster}-admin-password secret was also created here.
 resource "random_password" "admin_password" {
-  count = var.enable_cluster_admin && var.admin_password_override == null ? 1 : 0
+  count = var.enable_cluster_admin && var.admin_password_override == null && !(var.external_auth_providers_enabled == true) ? 1 : 0
 
   length           = 20
   special          = true
@@ -400,7 +411,7 @@ resource "random_password" "admin_password" {
 module "bootstrap_admin" {
   source = "../modules/infrastructure/bootstrap-admin"
 
-  enabled    = var.enable_bootstrap_admin_user
+  enabled    = var.enable_bootstrap_admin_user && !(var.external_auth_providers_enabled == true)
   cluster_id = var.bootstrap_admin_cluster_id
   password   = var.bootstrap_admin_password
 }

@@ -208,10 +208,11 @@ validate_env_vars() {
 	fi
 
 	# Login credentials required when installing (ENABLE=true). Cleanup may only need hub secret for spoke.
-	if [[ "${ENABLE:-true}" == "true" ]]; then
+	# BOOTSTRAP_KUBECONFIG bypasses username/password — used for external-auth clusters (break-glass credential).
+	if [[ "${ENABLE:-true}" == "true" ]] && [[ -z "${BOOTSTRAP_KUBECONFIG:-}" ]]; then
 		if [[ -z "${BOOTSTRAP_USERNAME:-}" || -z "${BOOTSTRAP_PASSWORD:-}" || -z "${CLUSTER_API_URL:-}" ]]; then
 			if [[ -z "${CREDENTIALS_SECRET:-}" ]]; then
-				bad_exit "Set BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD, and CLUSTER_API_URL (from bootstrap-admin), or CREDENTIALS_SECRET for Secrets Manager login."
+				bad_exit "Set BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD, and CLUSTER_API_URL (from bootstrap-admin), or CREDENTIALS_SECRET for Secrets Manager login, or BOOTSTRAP_KUBECONFIG for external-auth clusters."
 			fi
 		fi
 	fi
@@ -400,20 +401,31 @@ log_into_cluster() {
 		bad_exit "KUBECONFIG is unset. Call init_ephemeral_kubeconfigs / use_kubeconfig before log_into_cluster (#45)."
 	fi
 
-	resolve_login_credentials "${credentials}" "${region}"
-
-	if server_matches "${LOGIN_URL}" && oc whoami &>/dev/null; then
-		echo "Already logged into ${label} at $(oc whoami --show-server) via ${KUBECONFIG}."
-		assert_current_server "${LOGIN_URL}" "${label}"
+	# External-auth clusters: BOOTSTRAP_KUBECONFIG provides a pre-authenticated kubeconfig
+	# from a ROSA break-glass credential. Skip credential resolution and oc login.
+	if [[ -n "${BOOTSTRAP_KUBECONFIG:-}" ]]; then
+		echo "Using break-glass kubeconfig for ${label} (external auth)..."
+		export KUBECONFIG="${BOOTSTRAP_KUBECONFIG}"
+		if ! oc whoami &>/dev/null; then
+			bad_exit "Break-glass kubeconfig is not authenticated. Check BOOTSTRAP_KUBECONFIG=${BOOTSTRAP_KUBECONFIG}"
+		fi
+		echo "Authenticated as $(oc whoami) via break-glass credential."
 	else
-		poll_oc_login "${LOGIN_URL}" "${LOGIN_USER}" "${LOGIN_PASSWORD}"
-		assert_current_server "${LOGIN_URL}" "${label}"
-		# Optional short settle; default 0 — override with BOOTSTRAP_POST_LOGIN_SLEEP if needed
-		local post_sleep="${BOOTSTRAP_POST_LOGIN_SLEEP:-0}"
-		if [[ "${post_sleep}" =~ ^[0-9]+$ && "${post_sleep}" -gt 0 ]]; then
-			echo "Post-login settle sleep ${post_sleep}s (BOOTSTRAP_POST_LOGIN_SLEEP)..."
-			sleep "${post_sleep}"
+		resolve_login_credentials "${credentials}" "${region}"
+
+		if server_matches "${LOGIN_URL}" && oc whoami &>/dev/null; then
+			echo "Already logged into ${label} at $(oc whoami --show-server) via ${KUBECONFIG}."
 			assert_current_server "${LOGIN_URL}" "${label}"
+		else
+			poll_oc_login "${LOGIN_URL}" "${LOGIN_USER}" "${LOGIN_PASSWORD}"
+			assert_current_server "${LOGIN_URL}" "${label}"
+			# Optional short settle; default 0 — override with BOOTSTRAP_POST_LOGIN_SLEEP if needed
+			local post_sleep="${BOOTSTRAP_POST_LOGIN_SLEEP:-0}"
+			if [[ "${post_sleep}" =~ ^[0-9]+$ && "${post_sleep}" -gt 0 ]]; then
+				echo "Post-login settle sleep ${post_sleep}s (BOOTSTRAP_POST_LOGIN_SLEEP)..."
+				sleep "${post_sleep}"
+				assert_current_server "${LOGIN_URL}" "${label}"
+			fi
 		fi
 	fi
 

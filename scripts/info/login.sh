@@ -89,6 +89,13 @@ if [ -z "$ADMIN_SECRET_ARN" ] || [ "$ADMIN_SECRET_ARN" = "null" ]; then
 fi
 
 if [ "$ADMIN_USER_CREATED" != "true" ]; then
+	EXTERNAL_AUTH=$(terraform output -no-color -raw external_auth_providers_enabled 2>/dev/null || echo "false")
+	if [ "$EXTERNAL_AUTH" = "true" ]; then
+		error "This cluster uses external authentication providers."
+		error "HTPasswd login is not available. Use break-glass credentials instead:"
+		error "  make cluster.${CLUSTER_NAME}.break-glass-login"
+		exit 1
+	fi
 	error "No break-glass cluster admin is available (admin_user_created=${ADMIN_USER_CREATED:-false})."
 	error "make cluster.${CLUSTER_NAME}.login requires a long-lived HTPasswd admin."
 	error "Enable it in clusters/${CLUSTER_NAME}/terraform.tfvars:"

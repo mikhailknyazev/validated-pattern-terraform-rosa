@@ -48,6 +48,12 @@ output "admin_group" {
   value       = var.admin_group
   sensitive   = false
 }
+
+output "external_auth_providers_enabled" {
+  description = "Whether external authentication providers are enabled on this cluster"
+  value       = var.external_auth_providers_enabled == true
+  sensitive   = false
+}
 # from rhcs_cluster_rosa_hcp resource. Access these through the ROSA CLI or console.
 
 output "state" {

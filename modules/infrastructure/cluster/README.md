@@ -9,6 +9,7 @@ This module creates and manages ROSA HCP clusters, machine pools, identity provi
 - Support for custom machine pools or default pool
 - Multi-AZ support
 - Optional HTPasswd break-glass admin (`enable_identity_provider` / root `enable_cluster_admin`) via shared `htpasswd-idp` module
+- External authentication providers (`external_auth_providers_enabled`) — create-time only, disables HTPasswd IDPs
 - **EFS file system** (storage infrastructure that depends on cluster security groups)
 - **Control plane log forwarding** (new ROSA managed log forwarder) - supports multiple log groups to CloudWatch/S3
 - CloudWatch audit logging configuration (legacy, deprecated - IAM resources are in IAM module)
@@ -155,6 +156,7 @@ module "cluster" {
 | enable_audit_logging | [DEPRECATED] Enable CloudWatch audit log forwarding (legacy implementation). Use enable_control_plane_log_forwarding instead | `bool` | `true` |
 | enable_termination_protection | Enable cluster termination protection. When enabled, prevents accidental cluster deletion via ROSA CLI. Note: Disabling protection requires manual action via OCM console | `bool` | `false` |
 | api_endpoint_allowed_cidrs | Optional list of IPv4 CIDR blocks allowed to access the ROSA HCP API endpoint. By default, the VPC endpoint security group only allows access from within the VPC. Useful for VPN ranges, bastion hosts, or other VPCs | `list(string)` | `[]` |
+| external_auth_providers_enabled | Enable external authentication providers. When true, RHCS API rejects rhcs_identity_provider resources. Create-time only (immutable after creation). Use `make cluster.<name>.break-glass-login` for temporary admin access | `bool` | `null` |
 | enable_persistent_dns_domain | Enable persistent DNS domain registration. When true, creates rhcs_dns_domain resource that persists between cluster creations (not gated by persists_through_sleep). When false, ROSA uses default DNS domain | `bool` | `false` |
 | tags | Tags to apply to the cluster | `map(string)` | `{}` |
 | additional_machine_pools | Map of additional custom machine pools beyond default pools. Supports advanced features: taints, labels, kubelet configs, tuning configs, version pinning, capacity reservations | `map(object)` | `{}` |
@@ -186,6 +188,18 @@ Rendered into `gitops_bootstrap_hub_values` / `gitops_bootstrap_spoke_values` (s
 
 When `enable_identity_provider = true` (root `enable_cluster_admin`), the module creates a long-lived HTPasswd break-glass admin via `modules/infrastructure/htpasswd-idp` and stores credentials once in AWS Secrets Manager as `{cluster_name}-credentials` (JSON: `user`, `password`, `url`). That secret is the single source of truth for `make login` / `show-credentials` (no separate plain-password secret; Fixes #28). GitOps bootstrap uses a separate short-lived `module.bootstrap_admin` (also `htpasswd-idp`, different IDP/user names) — both can coexist (#29). Bootstrap does not require the break-glass secret.
 
+### External Authentication Providers
+
+When `external_auth_providers_enabled = true`:
+
+- The RHCS API rejects all `rhcs_identity_provider` resources (HTPasswd, LDAP, etc.)
+- Break-glass admin (`enable_identity_provider`) is automatically disabled
+- Bootstrap admin (`module.bootstrap_admin`) cannot create HTPasswd IDPs; bootstrap uses ROSA break-glass credentials instead
+- This is a **create-time only** attribute — it cannot be changed after cluster creation
+- Use `make cluster.<name>.break-glass-login` for temporary admin access (requires `rosa` CLI >= 1.2.36)
+
+Setting `enable_cluster_admin = true` with `external_auth_providers_enabled = true` produces a validation error.
+
 ## Outputs
 
 | Name | Description |
@@ -199,6 +213,7 @@ When `enable_identity_provider = true` (root `enable_cluster_admin`), the module
 | identity_provider_name | Name of the identity provider (null if enable_identity_provider is false) |
 | admin_username | Username of the admin user |
 | admin_group | Group the admin user belongs to |
+| external_auth_providers_enabled | Whether external authentication providers are enabled on this cluster |
 | cluster_credentials_secret_name | Name of AWS Secrets Manager secret containing cluster credentials JSON |
 | cluster_credentials_secret_arn | ARN of AWS Secrets Manager secret containing cluster credentials JSON |
 | efs_file_system_id | ID of the EFS file system (null if enable_efs is false) |

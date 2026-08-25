@@ -5,7 +5,7 @@
 # Reference: https://github.com/rh-mobb/terraform-rosa/blob/main/05-identity.tf
 
 locals {
-  break_glass_enabled    = var.enable_identity_provider && local.persists_through_sleep
+  break_glass_enabled    = var.enable_identity_provider && local.persists_through_sleep && !(var.external_auth_providers_enabled == true)
   break_glass_password   = var.admin_password_for_bootstrap != null ? var.admin_password_for_bootstrap : "CHANGE_ME_PASSWORD_NOT_SET"
   break_glass_cluster_id = length(rhcs_cluster_rosa_hcp.main) > 0 ? one(rhcs_cluster_rosa_hcp.main[*].id) : null
   # Create credentials secret when break-glass password is supplied (enable_cluster_admin at root).

@@ -98,6 +98,42 @@ aws secretsmanager get-secret-value \
 
 Or use `make cluster.<name>.show-credentials` / `scripts/utils/get-admin-password.sh`.
 
+## External authentication providers
+
+When `external_auth_providers_enabled = true` in `terraform.tfvars`, the cluster uses external OIDC identity providers instead of the built-in OAuth server. This is a **create-time only** setting (immutable after cluster creation).
+
+**What changes:**
+
+- The RHCS API rejects all `rhcs_identity_provider` resources (HTPasswd, LDAP, etc.)
+- `enable_cluster_admin` (break-glass HTPasswd admin) is automatically disabled
+- Bootstrap uses ROSA break-glass credentials instead of HTPasswd admin
+- `make cluster.<name>.login` is replaced by `make cluster.<name>.break-glass-login`
+
+**Temporary admin access (break-glass credentials):**
+
+```bash
+make cluster.<name>.break-glass-login
+```
+
+This creates a ROSA break-glass credential (valid 24 hours), exports a kubeconfig, and verifies access. Requires `rosa` CLI >= 1.2.36.
+
+```bash
+# Manual workflow:
+rosa create break-glass-credential --cluster=$CLUSTER_NAME --expiration=24h
+rosa list break-glass-credential --cluster=$CLUSTER_NAME
+rosa describe break-glass-credential $ID --cluster=$CLUSTER_NAME --kubeconfig > break-glass.kubeconfig
+export KUBECONFIG=break-glass.kubeconfig
+oc whoami
+```
+
+**Revoking credentials:**
+
+```bash
+rosa revoke break-glass-credentials --cluster=$CLUSTER_NAME
+```
+
+**Bootstrap:** `make cluster.<name>.bootstrap` automatically detects external auth and uses break-glass credentials for the GitOps bootstrap flow. No manual intervention needed.
+
 ## Post-creation: notification contacts
 
 After the cluster is **Ready**, add notification contacts in [OpenShift Cluster Manager](https://console.redhat.com/openshift) — service accounts do not receive email alerts by default. See the [Enablement Guide](../deployment/enablement.md) for details.

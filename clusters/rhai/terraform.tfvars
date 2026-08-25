@@ -19,8 +19,11 @@ multi_az = false
 # Machine Pool Configuration
 default_instance_type = "m5.2xlarge"
 
-# Break-glass HTPasswd admin for make cluster.<name>.login
-enable_cluster_admin = true
+# External authentication (create-time only; replaces HTPasswd IDP)
+external_auth_providers_enabled = true
+
+# Break-glass HTPasswd admin - disabled (incompatible with external auth)
+enable_cluster_admin = false
 
 # GitOps Bootstrap
 enable_gitops_bootstrap = true
