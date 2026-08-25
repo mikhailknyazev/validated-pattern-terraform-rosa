@@ -64,6 +64,12 @@ output "admin_user_created" {
   sensitive   = false
 }
 
+output "external_auth_providers_enabled" {
+  description = "Whether external authentication providers are enabled (use break-glass-login for temporary admin access)"
+  value       = var.external_auth_providers_enabled == true
+  sensitive   = false
+}
+
 output "bootstrap_admin_username" {
   description = "Short-lived bootstrap HTPasswd username (null when enable_bootstrap_admin_user is false)"
   value       = module.bootstrap_admin.username

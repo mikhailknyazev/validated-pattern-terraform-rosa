@@ -247,6 +247,8 @@ resource "rhcs_cluster_rosa_hcp" "main" {
     role_arn = var.autonode_iam_role_arn
   } : null
 
+  external_auth_providers_enabled = var.external_auth_providers_enabled
+
   # Lifecycle settings
   disable_waiting_in_destroy          = false
   wait_for_create_complete            = true
@@ -282,6 +284,11 @@ resource "rhcs_cluster_rosa_hcp" "main" {
     precondition {
       condition     = length(setintersection(local.default_pool_names, local.additional_pool_names)) == 0
       error_message = "Additional machine pool names cannot conflict with default pool names. Default pools: ${join(", ", local.default_pool_names)}. Conflicting names: ${join(", ", setintersection(local.default_pool_names, local.additional_pool_names))}"
+    }
+
+    precondition {
+      condition     = !(var.external_auth_providers_enabled == true && var.enable_identity_provider == true)
+      error_message = "enable_identity_provider cannot be true when external_auth_providers_enabled is true. External auth providers reject rhcs_identity_provider resources."
     }
   }
 

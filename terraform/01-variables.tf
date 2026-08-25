@@ -412,6 +412,13 @@ variable "enable_cluster_admin" {
   nullable    = false
 }
 
+variable "external_auth_providers_enabled" {
+  description = "Enable external authentication providers on the ROSA HCP cluster. When true, break-glass admin and bootstrap admin are automatically disabled (RHCS API rejects rhcs_identity_provider resources). Use 'make cluster.<name>.break-glass-login' for temporary admin access. Create-time only (immutable after cluster creation)."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
 variable "enable_bootstrap_admin_user" {
   description = "Create short-lived HTPasswd bootstrap admin (module.bootstrap_admin). Default false. Bootstrap scripts set this true via targeted apply, then false to tear down. Relates to #29."
   type        = bool

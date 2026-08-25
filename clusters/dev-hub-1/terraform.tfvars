@@ -102,3 +102,66 @@ enable_audit_logging = false # Disable legacy audit logging in favor of new cont
 
 # Debug / Timing
 enable_timing = true # Enable cluster creation timing capture
+
+rosa create external-auth-provider -c rhai \
+  --name entraid \
+  --issuer-url "https://login.microsoftonline.com/64dc69e4-d083-49fc-9569-ebece1dd1408/v2.0" \
+  --issuer-audiences openshift,openshift-console,c5822d8a-3c23-4374-bb18-d9425f9b17cf \
+  --claim-mapping-username-claim preferred_username \
+  --claim-mapping-groups-claim groups \
+  --console-client-id "c5822d8a-3c23-4374-bb18-d9425f9b17cf" \
+  --console-client-secret "REDACTED"
+
+
+oc create clusterrolebinding entraid-cluster-admins \
+  --clusterrole=cluster-admin --group=6c26fe18-f4de-4e1b-bee8-097a4328dfb2
+
+oc create clusterrolebinding entraid-admin-user \
+  --clusterrole=cluster-admin \
+  --user="pafoster@redhat.com"
+
+# Entra ID Identity Provider
+enable_entra_identity_provider = true
+entra_tenant_id                = "64dc69e4-d083-49fc-9569-ebece1dd1408"
+entra_client_id                = "d33dc511-47f9-495a-b846-f4b8a6c5a49f"
+entra_client_secret            = "REDACTED"
+
+# Entra ID (Azure AD) OIDC Identity Provider
+resource "rhcs_identity_provider" "entra_id" {
+  count = var.enable_entra_identity_provider && local.persists_through_sleep ? 1 : 0
+
+  cluster = length(rhcs_cluster_rosa_hcp.main) > 0 ? one(rhcs_cluster_rosa_hcp.main[*].id) : null
+  name    = "entra-id"
+  openid = {
+    client_id     = var.entra_client_id
+    client_secret = var.entra_client_secret
+    issuer        = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
+    claims = {
+      email              = ["email"]
+      name               = ["name"]
+      preferred_username = ["preferred_username", "upn"]
+      groups             = ["groups"]
+    }
+    extra_scopes = ["email", "profile"]
+  }
+
+  # RHCS API redacts client_secret on read-back, returning a placeholder.
+  # Ignore changes to prevent perpetual diff on every plan.
+  lifecycle {
+    ignore_changes = [openid]
+  }
+
+
+
+rosa create external-auth-provider \
+  --cluster=rhai \
+  --name=entraid \
+  --issuer-url=https://login.microsoftonline.com/64dc69e4-d083-49fc-9569-ebece1dd1408/v2.0 \
+  --issuer-audiences=e6a75a64-95ce-4dfd-9fbf-a5835bfe4a5e \
+  --claim-mapping-username-claim=preferred_username \
+  --claim-mapping-groups-claim=groups \
+  --console-client-id=e6a75a64-95ce-4dfd-9fbf-a5835bfe4a5e \
+  --console-client-secret="REDACTED"
+
+  rosa create external-auth-provider --cluster=${ROSA_CLUSTER_NAME} --name=${IDP_NAME} --issuer-url=https://login.microsoftonline.com/${TENANT_ID}/v2.0 --issuer-audiences=${CLIENT_ID} --claim-mapping-username-claim=email --claim-mapping-groups-claim=groups  --console-client-id=${CLIENT_ID} --console-client-secret=${CLIENT_SECRET}
+  https://console-openshift-console.apps.rosa.domain-prefix.ab12.p3.openshiftapps.com/auth/callback
