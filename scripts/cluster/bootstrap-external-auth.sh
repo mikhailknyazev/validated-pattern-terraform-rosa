@@ -31,6 +31,7 @@ check_required_tools rosa oc
 BG_ID=""
 BG_KUBECONFIG=""
 
+# shellcheck disable=SC2329
 cleanup_break_glass() {
 	if [[ -n "$BG_KUBECONFIG" ]] && [[ -f "$BG_KUBECONFIG" ]]; then
 		rm -f "$BG_KUBECONFIG"
