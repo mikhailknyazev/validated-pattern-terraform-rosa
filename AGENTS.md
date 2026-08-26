@@ -1314,7 +1314,7 @@ make cluster.bgp.destroy_force   # when validation done — 3x c5.metal is expen
 2. Keep PR/recipe instance type (`c5.metal`) unless the operator explicitly asks to change it. Multi-AZ needs metal in **all** AZs used (e.g. `m5zn.metal` is missing `ap-southeast-2a`).
 3. `enable_route_server = true` creates Route Server, 2 endpoints/private subnet, route-table propagation, IRSA role for `openshift-cudn-bgp-routing-controller-manager`, and Secrets Manager secret `{cluster}-bgp-config`.
 4. Set `enable_secrets_manager_iam = true` on the BGP recipe so ESO can read that secret (issue #51).
-5. GitOps path `dev/bgp` installs ESO + Virt + `cudn-bgp-routing-operator` with `externalSecret` — prefer that over hardcoding role ARN / `routeServerIDs` or manual `rosa-bgp-operator` `make deploy`.
+5. GitOps path `dev/bgp` installs ESO + Virt + `cudn-bgp-routing-operator` (builds [bgp-cloud-connector](https://github.com/openshift/bgp-cloud-connector) in-cluster) with `externalSecret` — prefer that over hardcoding role ARN / `routeServerIDs` or manual operator `make deploy`.
 6. ESO role ARN in cluster-config is still needed once (`{cluster}-rosa-secretsmanager-role-iam`); operator IRSA + `CUDNBgpConfig.aws` come from the synced Secret.
 7. Set `enable_cluster_admin = true` on the recipe for break-glass `make cluster.bgp.login`.
 8. OCP **4.21+** required (example uses 4.22.x) for FRR-K8s / CUDN / RouteAdvertisements.

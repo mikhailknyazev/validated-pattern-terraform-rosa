@@ -229,6 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bootstrap skipped `rosa-platform-metadata`**: `install_gitops_hub` called `good_exit` after Helm install, which exited the script before `publish_platform_metadata` / storage-class steps. Hub install now returns to `main()` so metadata is published. ConfigMap data values are quoted strings so numeric `awsAccountId` applies cleanly.
 
 ### Changed
+- **BGP operator source**: GitOps `dev/bgp` / `cudn-bgp-routing-operator` now builds [bgp-cloud-connector](https://github.com/openshift/bgp-cloud-connector) in-cluster instead of `jingczhang/rosa-bgp-operator`. Docs and Route Server comments updated; Terraform IRSA identity is unchanged.
 - **Gitea bootstrap naming**: `make cluster.<name>.bootstrap-gitea`, `BOOTSTRAP_GITEA`, and `bootstrap-gitops.sh --gitea` replace `bootstrap-private` / `BOOTSTRAP_PRIVATE` / `--private` (deprecated aliases still work). Names the in-cluster Gitea local Helm/cluster-config loop; it is not a private ROSA cluster. Helm basic auth is passed only when `BOOTSTRAP_GITEA=true`.
 - **App-of-apps Helm chart pins**: `targetRevision` values in hub bootstrap templates are Terraform variables (`app_of_apps_infrastructure_chart_version` default `0.3.0`, `app_of_apps_application_chart_version` `1.5.8`, `app_of_apps_acm_team_onboarding_chart_version` `0.4.1`) instead of hardcoded literals.
 - **BGP recipe worker size**: `clusters/bgp` default workers use `m7i.2xlarge` (was `m5.xlarge`) for GitOps/BuildConfig headroom on greenfield applies.

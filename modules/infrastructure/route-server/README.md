@@ -1,6 +1,6 @@
 # Route Server Module
 
-AWS VPC Route Server for BGP routing with the [CUDN BGP routing operator](https://github.com/jingczhang/rosa-bgp-operator).
+AWS VPC Route Server for BGP routing with the [BGP cloud connector](https://github.com/openshift/bgp-cloud-connector).
 
 ## What it creates
 

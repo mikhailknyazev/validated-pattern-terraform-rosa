@@ -682,7 +682,7 @@ Use these as copy-paste sources — not as exclusive cluster "types":
 
 ### CUDN BGP / VPC Route Server
 
-Use the [bgp](../../clusters/bgp/terraform.tfvars) recipe to provision AWS VPC Route Server + IRSA for the [CUDN BGP routing operator](https://github.com/jingczhang/rosa-bgp-operator), with OpenShift Virtualization and operator install driven by [rosa-cluster-config `dev/bgp`](https://github.com/rh-mobb/rosa-cluster-config/tree/main/dev/bgp).
+Use the [bgp](../../clusters/bgp/terraform.tfvars) recipe to provision AWS VPC Route Server + IRSA for the [BGP cloud connector](https://github.com/openshift/bgp-cloud-connector), with OpenShift Virtualization and operator install driven by [rosa-cluster-config `dev/bgp`](https://github.com/rh-mobb/rosa-cluster-config/tree/main/dev/bgp).
 
 **What Terraform creates** when `enable_route_server = true`:
 
@@ -736,14 +736,14 @@ terraform output -raw secrets_manager_role_arn
 oc -n openshift-gitops get configmap rosa-platform-metadata -o yaml
 ```
 
-Manual fallback (no ESO): annotate the operator ServiceAccount with `bgp_operator_role_arn` and set `cudnBgpConfig.aws` from `route_server_id` / region, then restart the manager pod.
+Manual fallback (no ESO): annotate the operator ServiceAccount with `bgp_operator_role_arn` and set `cudnBgpConfig.platform: AWS` plus `cudnBgpConfig.aws` from `route_server_id` / region, then restart the manager pod.
 
 #### Post-deploy validation checklist
 
 1. Workers Ready including three metal BGP routers (`oc get nodes -l bgp_router=true`)
 2. OpenShift Virtualization / CNV operator healthy
 3. Operator pod Running in `openshift-cudn-bgp-routing` with IRSA (no AWS credential errors in logs)
-4. `CUDNBgpConfig` status shows discovered Route Server endpoints / ASN
+4. `CUDNBgpConfig` status.peerGroups shows discovered Route Server neighbors / ASN
 5. Route Server peers exist for BGP router node IPs (`aws ec2 describe-route-server-peers`)
 
 #### Teardown

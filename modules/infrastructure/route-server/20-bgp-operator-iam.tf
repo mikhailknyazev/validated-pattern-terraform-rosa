@@ -3,7 +3,7 @@
 # on BGP-enabled worker nodes.
 #
 # Service account: openshift-cudn-bgp-routing:openshift-cudn-bgp-routing-controller-manager
-# Permissions: from rosa-bgp-operator README
+# Permissions: from bgp-cloud-connector README
 
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
