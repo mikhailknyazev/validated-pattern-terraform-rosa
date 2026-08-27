@@ -825,3 +825,77 @@ variable "api_endpoint_allowed_cidrs" {
   default     = []
   nullable    = false
 }
+#------------------------------------------------------------------------------
+# Registry Image Mirrors
+# Passed through to the cluster module; see
+# modules/infrastructure/cluster/23-image-mirrors.tf for scope, limits and references.
+#------------------------------------------------------------------------------
+
+variable "image_mirrors" {
+  description = <<-EOT
+    Digest-based registry mirrors for the cluster, applied after cluster creation.
+
+    Map key   = the SOURCE repository path being mirrored, for example
+                "registry.redhat.io" or "quay.io/prometheus". This is a repository
+                path: no URL scheme, no ":tag" suffix, no "@sha256:..." digest.
+    Map value = an ordered list of mirror repository paths. Mirrors are tried in the
+                order given, so put the closest or most reliable mirror first.
+
+    Only image references pinned BY DIGEST are rewritten; references by tag are not,
+    and the mirror must hold byte-identical manifests for the digests to match.
+
+    Most useful on zero-egress clusters, where workload images must come from a
+    reachable mirror rather than from the vendor's public registry.
+
+    Example:
+      image_mirrors = {
+        "registry.redhat.io" = ["mirror.example.com/redhat"]
+        "quay.io/prometheus" = ["mirror.example.com/quay-prometheus"]
+      }
+  EOT
+  type        = map(list(string))
+  default     = {}
+  nullable    = false
+
+  validation {
+    # A URL scheme or a digest suffix is the most common way to get this wrong: these
+    # are repository paths, not URLs and not fully-qualified image references.
+    condition = alltrue([
+      for src in keys(var.image_mirrors) :
+      src != "" &&
+      !startswith(lower(src), "http://") &&
+      !startswith(lower(src), "https://") &&
+      !strcontains(src, "@")
+    ])
+    error_message = "image_mirrors keys must be non-empty repository paths with no URL scheme and no digest (e.g. \"registry.redhat.io\", not \"https://registry.redhat.io\" and not \"registry.redhat.io/ubi@sha256:...\")."
+  }
+
+  validation {
+    # A ":tag" suffix on the source is a path mistake. Only checked when the path has
+    # more than one segment, so a legitimate registry port such as "host:5000" is not
+    # flagged.
+    condition = alltrue([
+      for src in keys(var.image_mirrors) :
+      length(split("/", src)) < 2 ? true : !strcontains(element(split("/", src), length(split("/", src)) - 1), ":")
+    ])
+    error_message = "image_mirrors keys must not carry a tag suffix (e.g. use \"registry.redhat.io/ubi9\", not \"registry.redhat.io/ubi9:latest\")."
+  }
+
+  validation {
+    condition     = alltrue([for mirrors in values(var.image_mirrors) : length(mirrors) > 0])
+    error_message = "Each image_mirrors entry must list at least one mirror repository path."
+  }
+
+  validation {
+    condition = alltrue([
+      for mirrors in values(var.image_mirrors) : alltrue([
+        for mirror in mirrors :
+        mirror != "" &&
+        !startswith(lower(mirror), "http://") &&
+        !startswith(lower(mirror), "https://") &&
+        !strcontains(mirror, "@")
+      ])
+    ])
+    error_message = "image_mirrors values must be non-empty repository paths with no URL scheme and no digest."
+  }
+}

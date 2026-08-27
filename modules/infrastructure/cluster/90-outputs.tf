@@ -235,3 +235,10 @@ output "control_plane_log_s3_bucket_name" {
   value       = var.enable_control_plane_log_forwarding && var.control_plane_log_s3_enabled && length(aws_s3_bucket.control_plane_logs) > 0 ? aws_s3_bucket.control_plane_logs[0].id : null
   sensitive   = false
 }
+
+# Registry Image Mirror Outputs
+output "image_mirror_ids" {
+  description = "Map of source repository path to the identifier of its image mirror object. Empty when image_mirrors is not set. Useful for confirming what the management plane actually created, which is not always obvious from the plan."
+  value       = { for source_path, mirror in rhcs_image_mirror.this : source_path => mirror.id }
+  sensitive   = false
+}

@@ -175,6 +175,11 @@ Rendered into `gitops_bootstrap_hub_values` / `gitops_bootstrap_spoke_values` (s
 | app_of_apps_application_chart_version | `app-of-apps-application` Argo `targetRevision` (non-hub) | `string` | `1.5.8` |
 | app_of_apps_acm_team_onboarding_chart_version | `app-of-apps-acm-team-onboarding` Argo `targetRevision` (hub) | `string` | `0.4.1` |
 | gitops_git_target_revision | Git branch/tag for cluster-config (`gitTargetRevision`) | `string` | `HEAD` |
+### Image Mirrors
+
+| Name | Description | Type | Default |
+|------|-------------|------|---------|
+| image_mirrors | Digest-based registry mirrors, keyed by source repository path. Only digest-pinned references are rewritten; references by tag are not. See [Registry Image Mirrors](#registry-image-mirrors). | `map(list(string))` | `{}` |
 
 ### Machine Pool Defaults
 
@@ -226,6 +231,7 @@ Setting `enable_cluster_admin = true` with `external_auth_providers_enabled = tr
 | gitops_bootstrap_acm_mode | ACM mode (hub, spoke, noacm) for selecting values output |
 | gitops_bootstrap_env_exports | Shell export statements for bootstrap script env vars |
 | gitops_bootstrap_script_path | Path to the GitOps bootstrap script |
+| image_mirror_ids | Map of source repository path to the identifier of its image mirror object |
 
 **Note**: KMS key outputs (EBS, EFS, ETCD) and IAM role outputs (CloudWatch logging, Cert Manager, Secrets Manager) are now in the IAM module. See `modules/infrastructure/iam/README.md` for details.
 
@@ -344,6 +350,37 @@ additional_machine_pools = {
 - **EC2 Metadata HTTP Tokens**: Control IMDS access (`"optional"` or `"required"`, default: `"required"`)
 
 **Note**: Additional machine pool names cannot conflict with default pool names (e.g., `"workers"`, `"workers-0"`, `"workers-1"`, etc.). The module validates this automatically.
+
+## Registry Image Mirrors
+
+Set `image_mirrors` to redirect the cluster's image pulls to a mirror registry. On a
+`zero_egress = true` cluster this is what makes third-party operator content installable.
+
+```hcl
+image_mirrors = {
+  "registry.redhat.io" = ["mirror.example.com/redhat"]
+  "quay.io/prometheus" = ["mirror.example.com/quay-prometheus"]
+}
+```
+
+`ImageDigestMirrorSet` objects authored directly on a hosted-control-plane guest are
+rejected by admission — mirror configuration is owned by the management plane and
+projected down — so `rhcs_image_mirror` is the supported path.
+
+Three limits decide whether this will work for a given image:
+
+- **Digest references only.** Images referenced by tag are not rewritten.
+- **The digests must match.** The mirror must hold byte-identical manifests, or the
+  rewrite silently never applies.
+- **Fallback to the source cannot be suppressed** (`mirrorSourcePolicy` is not exposed),
+  so a missing image on a zero-egress cluster appears as slow pulls rather than a clean
+  failure.
+
+Credentials for an authenticated mirror live in the cluster pull secret, which the ROSA
+HCP cluster resource does not expose — that step is outside Terraform.
+
+Full detail, including the troubleshooting order, is in the **Registry Image Mirrors**
+guide (`docs/guides/image-mirrors.md`).
 
 ## Control Plane Log Forwarding (S3)
 

@@ -277,6 +277,9 @@ module "cluster" {
   control_plane_log_s3_retention_days         = var.control_plane_log_s3_retention_days
   resource_suffix                             = random_id.resource_suffix.hex
 
+  # Registry image mirrors (digest-based, applied after cluster creation)
+  image_mirrors = var.image_mirrors
+
   # GitOps bootstrap configuration
   enable_gitops_bootstrap = var.enable_gitops_bootstrap != null ? var.enable_gitops_bootstrap : false
   # admin_password_for_bootstrap is set above in identity provider configuration

@@ -338,3 +338,13 @@ output "cluster_creation_timing" {
   value       = var.enable_timing ? module.cluster_timing.timing_summary : null
   sensitive   = false
 }
+
+#------------------------------------------------------------------------------
+# Registry Image Mirrors
+#------------------------------------------------------------------------------
+
+output "image_mirror_ids" {
+  description = "Map of source repository path to the identifier of its image mirror object. Empty when image_mirrors is not set."
+  value       = module.cluster.image_mirror_ids
+  sensitive   = false
+}
