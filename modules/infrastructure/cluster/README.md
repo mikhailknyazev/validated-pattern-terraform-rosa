@@ -175,6 +175,11 @@ Rendered into `gitops_bootstrap_hub_values` / `gitops_bootstrap_spoke_values` (s
 | app_of_apps_application_chart_version | `app-of-apps-application` Argo `targetRevision` (non-hub) | `string` | `1.5.8` |
 | app_of_apps_acm_team_onboarding_chart_version | `app-of-apps-acm-team-onboarding` Argo `targetRevision` (hub) | `string` | `0.4.1` |
 | gitops_git_target_revision | Git branch/tag for cluster-config (`gitTargetRevision`) | `string` | `HEAD` |
+### Registry Config
+
+| Name | Description | Type | Default |
+|------|-------------|------|---------|
+| registry_config | Trusted registry CAs, allowed/blocked registries, and ImageStream import restrictions. Null leaves platform defaults in place. See [Registry Configuration](#registry-configuration). | `object` | `null` |
 
 ### Machine Pool Defaults
 
@@ -344,6 +349,44 @@ additional_machine_pools = {
 - **EC2 Metadata HTTP Tokens**: Control IMDS access (`"optional"` or `"required"`, default: `"required"`)
 
 **Note**: Additional machine pool names cannot conflict with default pool names (e.g., `"workers"`, `"workers-0"`, `"workers-1"`, etc.). The module validates this automatically.
+
+## Registry Configuration
+
+`registry_config` controls which registries the cluster may use and which registry
+certificate authorities it trusts. Leaving it `null` (the default) keeps the cluster on
+platform defaults and restricts nothing.
+
+The common case is trusting a private mirror's certificate authority, which is what makes
+a mirror behind an internal CA usable at all:
+
+```hcl
+registry_config = {
+  additional_trusted_ca = {
+    "mirror.example.com" = file("mirror-ca.pem")
+  }
+}
+```
+
+Without it the pull fails with `x509: certificate signed by unknown authority`.
+
+**`registry_sources.allowed_registries` is a cluster-wide deny-by-default switch.** Every
+registry not on the list is blocked, including registries the platform itself needs, and
+the failure appears at the next pod schedule rather than at apply time — an incomplete
+list looks like a clean apply followed by unrelated breakage hours later. It is not
+required to make image mirroring work; treat it as a separate hardening change and test
+it on a non-production cluster first. `platform_allowlist_id` exists precisely so the
+platform's own internal registries stay reachable when you use it.
+
+Two fields sound alike and are not:
+
+| Field | Scope |
+|-------|-------|
+| `registry_sources.allowed_registries` | Every image pull and push for builds and pods. Mutually exclusive with `blocked_registries`. |
+| `allowed_registries_for_import` | Which registries users may import ImageStreams from. Nothing else. |
+
+The module validates the mutually-exclusive pair, that `additional_trusted_ca` values are
+PEM certificates rather than paths, and that each import entry names a domain — so those
+mistakes fail at plan time instead of at pull time.
 
 ## Control Plane Log Forwarding (S3)
 

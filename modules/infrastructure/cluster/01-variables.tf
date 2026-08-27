@@ -921,3 +921,115 @@ variable "additional_cluster_properties" {
   default     = {}
   nullable    = false
 }
+
+##############################################################
+# Registry Configuration
+# Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/resources/cluster_rosa_hcp#registry_config
+##############################################################
+
+variable "registry_config" {
+  description = <<-EOT
+    Cluster registry configuration. Null (the default) leaves the cluster on platform
+    defaults and restricts nothing. Updatable in place.
+
+    Fields:
+
+      registry_sources.allowed_registries
+        Registries the container runtime may pull and push for builds and pods.
+        DANGER: setting this switches the cluster to DENY-BY-DEFAULT -- every registry
+        not listed is blocked, including ones the platform itself needs. The failure
+        appears at the next pod schedule rather than at apply time, so an incomplete
+        list looks like a successful apply followed by unrelated breakage hours later.
+        Not required to make image mirroring work. Test on a non-production cluster.
+        Mutually exclusive with blocked_registries. Supports a leading "*" wildcard,
+        e.g. "*.example.com".
+
+      registry_sources.blocked_registries
+        The inverse: everything is allowed except these. Mutually exclusive with
+        allowed_registries.
+
+      registry_sources.insecure_registries
+        Registries reached over HTTP or without a valid TLS certificate. Prefer
+        additional_trusted_ca over marking a registry insecure.
+
+      additional_trusted_ca
+        Map of registry hostname => PEM-encoded CA certificate. This is the field that
+        makes a mirror behind a private certificate authority usable: without it the
+        pull fails with "x509: certificate signed by unknown authority". Values must be
+        the certificate itself, not a path to one.
+
+      allowed_registries_for_import
+        Registries users may import ImageStreams from. Narrower than registry_sources:
+        it governs ImageStream import only, not pod image pulls. Do not reach for this
+        expecting it to control what workloads can pull.
+
+      platform_allowlist_id
+        Reference to a RegistryAllowlist of internal registries that must stay reachable
+        for the platform to work. Its lifecycle can be managed separately. Relevant when
+        using allowed_registries.
+
+    Example -- trust a private mirror's CA, without restricting anything:
+
+      registry_config = {
+        additional_trusted_ca = {
+          "mirror.example.com" = file("mirror-ca.pem")
+        }
+      }
+  EOT
+
+  type = object({
+    registry_sources = optional(object({
+      allowed_registries  = optional(list(string))
+      blocked_registries  = optional(list(string))
+      insecure_registries = optional(list(string))
+    }))
+    allowed_registries_for_import = optional(list(object({
+      domain_name = optional(string)
+      insecure    = optional(bool)
+    })))
+    additional_trusted_ca = optional(map(string))
+    platform_allowlist_id = optional(string)
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    # The API rejects both at once. Catching it here gives a readable error at plan time
+    # instead of an API error partway through an apply.
+    condition = (
+      var.registry_config == null ||
+      try(var.registry_config.registry_sources, null) == null ||
+      length(coalesce(try(var.registry_config.registry_sources.allowed_registries, null), [])) == 0 ||
+      length(coalesce(try(var.registry_config.registry_sources.blocked_registries, null), [])) == 0
+    )
+    error_message = "registry_config.registry_sources.allowed_registries and blocked_registries are mutually exclusive; set at most one."
+  }
+
+  validation {
+    # A path, a bare base64 blob, or an empty string are the usual mistakes here. Anything
+    # that is not a PEM certificate will fail at pull time, far from the change that caused it.
+    condition = (
+      var.registry_config == null ||
+      try(var.registry_config.additional_trusted_ca, null) == null ||
+      alltrue([
+        for host, cert in var.registry_config.additional_trusted_ca :
+        host != "" && startswith(trimspace(cert), "-----BEGIN CERTIFICATE-----")
+      ])
+    )
+    error_message = "registry_config.additional_trusted_ca must map a non-empty registry hostname to a PEM-encoded certificate beginning with \"-----BEGIN CERTIFICATE-----\" (the certificate itself, not a path to it)."
+  }
+
+  validation {
+    # domain_name is optional in the provider schema, but an entry without one configures
+    # nothing and is silently ignored.
+    condition = (
+      var.registry_config == null ||
+      try(var.registry_config.allowed_registries_for_import, null) == null ||
+      alltrue([
+        for entry in var.registry_config.allowed_registries_for_import :
+        try(entry.domain_name, null) != null && try(entry.domain_name, "") != ""
+      ])
+    )
+    error_message = "Each registry_config.allowed_registries_for_import entry must set a non-empty domain_name."
+  }
+}
