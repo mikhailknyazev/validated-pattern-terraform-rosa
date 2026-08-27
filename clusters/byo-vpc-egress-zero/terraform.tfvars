@@ -78,3 +78,18 @@ enable_timing = true
 #   "registry.redhat.io" = ["mirror.example.com/redhat"]
 #   "quay.io/prometheus" = ["mirror.example.com/quay-prometheus"]
 # }
+
+# Registry Configuration
+# Trust a private mirror's certificate authority, restrict which registries may be used,
+# or limit ImageStream imports. Leave unset to keep platform defaults (nothing restricted).
+#
+# WARNING: registry_sources.allowed_registries is a cluster-wide DENY-BY-DEFAULT switch --
+# every registry not listed is blocked, including ones the platform needs, and the failure
+# surfaces at the next pod schedule rather than at apply time. It is not needed to make
+# image mirroring work. Test it on a non-production cluster first.
+#
+# registry_config = {
+#   additional_trusted_ca = {
+#     "mirror.example.com" = file("mirror-ca.pem")
+#   }
+# }

@@ -239,6 +239,14 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   # Properties are constructed in locals.cluster_properties for better readability and maintainability
   properties = local.cluster_properties
 
+  # Registry configuration: which registries the container runtime may use, which registry CAs
+  # the cluster trusts, and which registries users may import ImageStreams from. Updatable in
+  # place. Null (the default) leaves the cluster on platform defaults, restricting nothing.
+  # Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/resources/cluster_rosa_hcp#registry_config
+  # Read the registry_config variable in 01-variables.tf before setting registry_sources:
+  # allowed_registries switches the cluster to deny-by-default and the failure is delayed.
+  registry_config = var.registry_config
+
   # AutoNode (Karpenter): nested attribute on rhcs_cluster_rosa_hcp (not a block). OCM does not allow
   # removing it once enabled—do not set enable_autonode=false on existing clusters without vendor guidance.
   # Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/resources/cluster_rosa_hcp#auto_node
