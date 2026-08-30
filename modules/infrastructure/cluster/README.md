@@ -357,6 +357,12 @@ Set `image_mirrors` to redirect the cluster's image pulls to a mirror registry. 
 `zero_egress = true` cluster this is what makes third-party operator content installable.
 
 ```hcl
+# Covers: image_mirrors
+# Does: Declares two source repositories and their first-choice mirror locations.
+# Why: Repository-scoped mappings match the management API's mirror identity.
+# Change: Reordering a list changes preference; changing a key replaces one mirror.
+# Trap: Tag-referenced images bypass digest mirrors even when this mapping exists.
+# Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/image_mirror
 image_mirrors = {
   "registry.redhat.io" = ["mirror.example.com/redhat"]
   "quay.io/prometheus" = ["mirror.example.com/quay-prometheus"]

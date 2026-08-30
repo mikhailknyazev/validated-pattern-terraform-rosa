@@ -831,6 +831,12 @@ variable "api_endpoint_allowed_cidrs" {
 # modules/infrastructure/cluster/23-image-mirrors.tf for scope, limits and references.
 #------------------------------------------------------------------------------
 
+# Covers: description, image_mirrors, type, default, nullable, condition, error_message
+# Does: Exposes the cluster module's typed source-to-mirrors contract at the root.
+# Why: Root validation gives callers the same early failures as direct module users.
+# Change: Changing a key replaces one mirror; changing its list updates that mapping.
+# Trap: Registry ports are valid while tag suffixes on repository paths are not.
+# Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/image_mirror
 variable "image_mirrors" {
   description = <<-EOT
     Digest-based registry mirrors for the cluster, applied after cluster creation.

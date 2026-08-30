@@ -927,6 +927,12 @@ variable "additional_cluster_properties" {
 # See 23-image-mirrors.tf for the scope, limits and references.
 ##############################################################
 
+# Covers: description, image_mirrors, type, default, nullable, condition, error_message
+# Does: Defines source-keyed ordered digest-mirror mappings and rejects malformed paths.
+# Why: A typed map makes API identity explicit and catches invalid references before apply.
+# Change: Changing a key replaces one mirror; changing its list updates that mapping.
+# Trap: Tags, URL schemes, digest suffixes, and empty lists cannot express this API.
+# Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/image_mirror
 variable "image_mirrors" {
   description = <<-EOT
     Digest-based registry mirrors for the cluster, applied after cluster creation.
@@ -942,8 +948,10 @@ variable "image_mirrors" {
     the limits at the top of 23-image-mirrors.tf before relying on this.
 
     Keys are the Terraform resource addresses and the source is immutable in the API,
-    so editing a key destroys and recreates that one mirror. Adding or removing
-    entries leaves the others untouched.
+    so editing a key destroys and recreates that one mirror. Terraform leaves the
+    other mirror resource addresses unchanged, but live ROSA HCP 4.22.5 testing found
+    that mirror create and delete were followed by a managed worker roll. Treat the
+    apply as a disruption window; editing only an existing mirrors list was not tested.
 
     Example:
       image_mirrors = {

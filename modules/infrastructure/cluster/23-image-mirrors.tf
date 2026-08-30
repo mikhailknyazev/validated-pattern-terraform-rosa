@@ -40,9 +40,24 @@
 #      must exist in the cluster pull secret. The ROSA HCP cluster resource exposes no
 #      pull-secret attribute, so that step lives outside Terraform.
 #
-# Applied after cluster creation; changing mirrors is an in-place update. Changing the
-# source is not -- see the note on for_each keys in the variable description.
+# Editing the mirrors list for an existing source plans as an in-place provider update;
+# that update path has not been measured on a live cluster. Changing the source is not
+# in-place -- see the note on for_each keys in the variable description.
+#
+# Observed behavior, not vendor-documented -- on ROSA HCP 4.22.5, creating or
+# deleting an rhcs_image_mirror was followed by managed worker replacement
+# beginning roughly 7.5 minutes (create) and 14 minutes (delete) after the
+# change and settling within ~30 minutes; the guest ImageDigestMirrorSet
+# converged earlier, so guest convergence is not lifecycle convergence.
+# Batch all mirror additions into a single apply and treat it as a disruption
+# window. Do not add mirrors one product at a time.
 
+# Covers: for_each, cluster_id, source, mirrors, type, depends_on
+# Does: Creates one management-plane digest mirror for each declared source path.
+# Why: Source-keyed identity prevents duplicates and keeps each plan address readable.
+# Change: Changing source replaces one object; changing mirrors updates that source mapping.
+# Trap: Management acceptance precedes guest realization and create/delete can roll workers.
+# Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/image_mirror
 resource "rhcs_image_mirror" "this" {
   # Keyed by source repository path so that each mirror has a stable, readable address in
   # the plan, and so that a duplicate source is impossible to express.

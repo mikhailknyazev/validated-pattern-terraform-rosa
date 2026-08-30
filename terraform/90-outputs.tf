@@ -343,8 +343,14 @@ output "cluster_creation_timing" {
 # Registry Image Mirrors
 #------------------------------------------------------------------------------
 
+# Covers: description, value, sensitive
+# Does: Passes the cluster module's state-retained mirror identifiers to root callers.
+# Why: Root consumers need stable identifiers without reaching into child-module state.
+# Change: Removing the output breaks callers but does not alter management-plane mirrors.
+# Trap: This value is not a live management API or guest realization read.
+# Evidence: https://developer.hashicorp.com/terraform/language/values/outputs
 output "image_mirror_ids" {
-  description = "Map of source repository path to the identifier of its image mirror object. Empty when image_mirrors is not set."
+  description = "Map of source repository path to image-mirror id as recorded in Terraform state at the last apply. Empty when image_mirrors is not set. This is not a live management-API or guest read."
   value       = module.cluster.image_mirror_ids
   sensitive   = false
 }

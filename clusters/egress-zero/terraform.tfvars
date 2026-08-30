@@ -121,7 +121,12 @@ enable_gitops_bootstrap = true # Enable GitOps operator installation after clust
 gitops_git_repo_url     = "https://github.com/rh-mobb/rosa-cluster-config.git"
 gitops_git_path         = "dev/pczarkow" # Path to cluster configuration directory in Git repo
 
-# Debug / Timing
+# Covers: enable_timing
+# Does: Retains phase timing output for this example cluster lifecycle.
+# Why: Mirror acceptance and guest realization can diverge substantially in time.
+# Change: Disabling it removes timing receipts without changing cluster behavior.
+# Trap: Terraform timing alone never proves guest mirror realization completed.
+# Evidence: Observed behavior, not vendor-documented
 enable_timing = true # Enable cluster creation timing capture
 
 # Registry Image Mirrors

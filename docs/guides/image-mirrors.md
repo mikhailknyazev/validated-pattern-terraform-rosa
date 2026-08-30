@@ -25,6 +25,12 @@ The supported path is the management-plane API, which this pattern exposes as th
 Add the mirrors to your cluster's `terraform.tfvars`:
 
 ```hcl
+# Covers: image_mirrors
+# Does: Maps each source repository to its ordered digest-mirror candidates.
+# Why: Source-keyed identity matches the API and makes duplicate sources impossible.
+# Change: Reordering changes preference; changing a key replaces that mirror object.
+# Trap: Entries are repository paths, never URLs, tags, or digest references.
+# Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/image_mirror
 image_mirrors = {
   # source repository path        =  ordered list of mirrors
   "registry.redhat.io"            = ["mirror.example.com/redhat"]
@@ -33,15 +39,79 @@ image_mirrors = {
 }
 ```
 
-Then apply as usual. The mirrors are created after the cluster exists; adding, removing
-or reordering mirrors for an existing source is an in-place update.
+Then apply as usual. The mirrors are created after the cluster exists. Editing the
+ordered mirror list for an existing source plans as an in-place provider update, but
+that path has not been measured on a live cluster.
 
-Confirm what was actually created — the plan shows what you asked for, this shows what
-the management plane holds:
+!!! warning "Observed behavior, not vendor-documented — ROSA HCP 4.22.5"
+    Creating or deleting an `rhcs_image_mirror` was followed by managed worker
+    replacement beginning roughly 7.5 minutes after create and 14 minutes after delete,
+    and settling within about 30 minutes. The guest `ImageDigestMirrorSet` converged
+    earlier, so guest convergence was not lifecycle convergence. Routes kept returning
+    `200`, at least three workers remained Ready, and no ClusterOperator degraded; the
+    measured cost was node churn and surge capacity, not service loss. Batch mirror
+    additions into one apply and treat it as a disruption window.
 
-```bash
-terraform output image_mirror_ids
-```
+## Confirm it took effect
+
+`terraform output image_mirror_ids` is not one of these reads. It prints identifiers
+recorded in Terraform state at the last apply; it makes no management or guest API call.
+
+1. **Management plane — did the service accept the mapping?**
+
+   ```bash
+   # Covers: --cluster
+   # Does: Scopes the live management-plane read to the intended cluster.
+   # Why: An unscoped list can mix unrelated clusters and hide missing acceptance.
+   # Change: Changing the id reads a different cluster's mirror inventory.
+   # Trap: This read proves service acceptance, not guest realization.
+   # Evidence: https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/cli_tools/rosa-cli
+   rosa list image-mirrors --cluster <cluster-id>
+   ```
+
+   This reads the ROSA management API. The `rhcs_image_mirrors` data source is the
+   Terraform equivalent when a machine-readable live read is preferable.
+
+2. **Guest — was the mapping projected to the cluster?** Poll; do not sleep once.
+
+   ```bash
+   until oc get imagedigestmirrorset -o yaml | grep -F '<source-host>/<source-repository>'; do
+     sleep 15
+   done
+   ```
+
+   This reads the guest Kubernetes API. Management acceptance does not imply guest
+   realization. On the same service version, first successful reads already contained
+   the mapping at upper bounds of about 403 and 11,995 seconds; failed reads in between
+   timed out and do not prove absence. Use a predicate, not a fixed realization delay.
+
+3. **Workload — can an uncached digest-pinned pull succeed?**
+
+   ```yaml
+   # Covers: apiVersion, kind, metadata, name, spec, restartPolicy, containers, image, imagePullPolicy, command
+   # Does: Creates one disposable Pod that always performs a digest-pinned image pull.
+   # Why: A fresh pull prevents node cache from masquerading as mirror success.
+   # Change: A tag reference bypasses this digest mapping; cache policy weakens proof.
+   # Trap: Success proves redirection only when the original source is independently unreachable.
+   # Evidence: https://kubernetes.io/docs/concepts/containers/images/#image-pull-policy
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: mirror-verification
+   spec:
+     restartPolicy: Never
+     containers:
+       - name: probe
+         image: <source-host>/<source-repository>@sha256:<manifest-digest>
+         imagePullPolicy: Always
+         command: ["sleep", "300"]
+   ```
+
+   Apply the manifest, then run `oc wait --for=condition=Ready pod/mirror-verification
+   --timeout=5m`. This reads workload state through the guest API. On a zero-egress test
+   where the source is unreachable and only the mirror is reachable, success proves the
+   rewrite by construction. Elsewhere, use node-level `crictl` when mirror provenance is
+   required; successful kubelet Events echo the source reference from the Pod spec.
 
 ## The three layers
 
@@ -94,7 +164,8 @@ URL scheme, a digest suffix and a tag suffix for this reason. A registry port
 
 Changing a source destroys and recreates that mirror object — the API marks it
 replace-forcing. Since the map key *is* the source, editing a key in `image_mirrors`
-replaces one mirror and leaves the rest untouched.
+leaves the other Terraform resource addresses unchanged. It does not imply that the
+managed worker lifecycle is untouched; see the observed create/delete behavior above.
 
 ### Fallback to the source cannot be suppressed
 
