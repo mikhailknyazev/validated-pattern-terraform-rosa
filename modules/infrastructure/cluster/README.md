@@ -398,12 +398,21 @@ guide (`docs/guides/image-mirrors.md`).
 
 `registry_config` controls which registries the cluster may use and which registry
 certificate authorities it trusts. Leaving it `null` (the default) keeps the cluster on
-platform defaults and restricts nothing.
+platform defaults and restricts nothing on create. The module supplies a complete,
+non-null `registry_sources` child for every non-null input because RHCS 1.7.7 otherwise
+fails CA-only input with `Value Conversion Error`. Its member lists remain `null`, not
+empty, so the provider does not send registry-source values the caller omitted.
 
 The common case is trusting a private mirror's certificate authority, which is what makes
 a mirror behind an internal CA usable at all:
 
 ```hcl
+# Covers: registry_config, additional_trusted_ca
+# Does: Adds one PEM trust bundle without authoring a registry allowlist.
+# Why: Private registry certificates need node trust independently of pull permission.
+# Change: Changing the hostname or PEM changes which TLS endpoint is trusted.
+# Trap: A filesystem path is not certificate content and fails validation.
+# Evidence: https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/images/image-configuration-classic#images-configuration-cas_image-configuration
 registry_config = {
   additional_trusted_ca = {
     "mirror.example.com" = file("mirror-ca.pem")
@@ -431,6 +440,39 @@ Two fields sound alike and are not:
 The module validates the mutually-exclusive pair, that `additional_trusted_ca` values are
 PEM certificates rather than paths, and that each import entry names a domain — so those
 mistakes fail at plan time instead of at pull time.
+
+### Confirm it took effect
+
+These are three different reads. Do not substitute a Terraform output for either live
+API:
+
+1. `terraform show -json <saved-plan>` confirms the normalized request before apply.
+2. `rosa describe cluster --cluster <cluster-id> --output json | jq '.registry_config'`
+   reads management-plane acceptance.
+3. `oc get image.config.openshift.io/cluster -o yaml` reads guest realization of registry
+   sources and trusted CA references. For CA content, read the named managed ConfigMap and
+   compare its decoded PEM bytes with the input.
+
+Management acceptance does not prove guest realization. Poll the guest read and test one
+uncached pull before treating the change as effective.
+
+### RHCS 1.7.7 removal boundary
+
+Do not set an existing `registry_config` back to `null` with RHCS 1.7.7: that transition
+can stop the provider plugin. The tested recovery is an owning-API patch followed by a
+state refresh:
+
+```bash
+# First confirm the exact disposable or approved target; this changes cluster-wide policy.
+ocm patch /api/clusters_mgmt/v1/clusters/<cluster-id> <<'JSON'
+{"registry_config":{"registry_sources":{"allowed_registries":[]},"allowed_registries_for_import":[]}}
+JSON
+terraform apply -refresh-only
+```
+
+`platform_allowlist_id` is update-only after the service creates it; an attempt to remove
+it returns HTTP 400. The command above is a version-pinned recovery, not evidence that the
+Terraform null path works. Confirm the management API and guest reads again afterwards.
 
 ## Control Plane Log Forwarding (S3)
 

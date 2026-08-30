@@ -277,15 +277,8 @@ module "cluster" {
   control_plane_log_s3_retention_days         = var.control_plane_log_s3_retention_days
   resource_suffix                             = random_id.resource_suffix.hex
 
-  # Covers: image_mirrors
-  # Does: Passes root digest-mirror mappings unchanged into the cluster module.
-  # Why: One typed contract avoids divergent root and child interpretations.
-  # Change: Changing this value changes the declared management-plane mirror set.
-  # Trap: Acceptance here does not prove the guest has realized the mapping.
-  # Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/image_mirror
   image_mirrors = var.image_mirrors
 
-  # Registry configuration (trusted CAs, allowed/blocked registries, ImageStream imports)
   registry_config = var.registry_config
 
   # GitOps bootstrap configuration

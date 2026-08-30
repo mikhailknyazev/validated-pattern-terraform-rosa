@@ -35,6 +35,31 @@ locals {
   # Provided from root module (terraform/10-main.tf) so it can be shared across modules
   resource_suffix = var.resource_suffix != null ? var.resource_suffix : null
 
+  # Covers: registry_config_normalized, registry_sources, allowed_registries, blocked_registries, insecure_registries, allowed_registries_for_import, additional_trusted_ca, platform_allowlist_id
+  # Does: Completes the provider child while preserving every omitted member as null.
+  # Why: RHCS 1.7.7 cannot convert an omitted registry_sources child into its non-pointer state model.
+  # Change: Empty member lists would become authored values and change the request sent to OCM.
+  # Trap: Passing CA-only input through unchanged fails before remote contact with Value Conversion Error.
+  # Evidence: https://github.com/terraform-redhat/terraform-provider-rhcs/blob/v1.7.7/provider/registry_config/state.go#L16-L26
+  # RHCS 1.7.7 decodes registry_sources into a non-pointer Go struct. A
+  # non-null registry_config with that child omitted fails before remote
+  # contact with "Value Conversion Error". Complete the child here so callers
+  # can use CA-only input without reproducing the provider workaround.
+  # Null members preserve omission: the provider's builder treats an empty
+  # list as a value and would send it to OCM.
+  # Provider implementation:
+  # https://github.com/terraform-redhat/terraform-provider-rhcs/blob/v1.7.7/provider/registry_config/state.go#L16-L26
+  registry_config_normalized = var.registry_config == null ? null : {
+    registry_sources = {
+      allowed_registries  = try(var.registry_config.registry_sources.allowed_registries, null)
+      blocked_registries  = try(var.registry_config.registry_sources.blocked_registries, null)
+      insecure_registries = try(var.registry_config.registry_sources.insecure_registries, null)
+    }
+    allowed_registries_for_import = try(var.registry_config.allowed_registries_for_import, null)
+    additional_trusted_ca         = try(var.registry_config.additional_trusted_ca, null)
+    platform_allowlist_id         = try(var.registry_config.platform_allowlist_id, null)
+  }
+
   # S3 bucket name for control plane logs
   # Use provided name or generate one with cluster name + random suffix
   # This local is used by both 21-control-plane-log-forwarding.tf and 22-control-plane-log-forwarding-resources.tf
@@ -239,13 +264,13 @@ resource "rhcs_cluster_rosa_hcp" "main" {
   # Properties are constructed in locals.cluster_properties for better readability and maintainability
   properties = local.cluster_properties
 
-  # Registry configuration: which registries the container runtime may use, which registry CAs
-  # the cluster trusts, and which registries users may import ImageStreams from. Updatable in
-  # place. Null (the default) leaves the cluster on platform defaults, restricting nothing.
-  # Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/resources/cluster_rosa_hcp#registry_config
-  # Read the registry_config variable in 01-variables.tf before setting registry_sources:
-  # allowed_registries switches the cluster to deny-by-default and the failure is delayed.
-  registry_config = var.registry_config
+  # Covers: registry_config
+  # Does: Sends the normalized registry policy and trust object to the cluster resource.
+  # Why: One normalization point keeps every caller on a provider-safe child shape.
+  # Change: Changing it updates cluster-wide trust, pull policy, or import policy.
+  # Trap: allowed_registries denies by default and null restoration crashes RHCS 1.7.7.
+  # Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/cluster_rosa_hcp#nested-schema-for-registry_config
+  registry_config = local.registry_config_normalized
 
   # AutoNode (Karpenter): nested attribute on rhcs_cluster_rosa_hcp (not a block). OCM does not allow
   # removing it once enabled—do not set enable_autonode=false on existing clusters without vendor guidance.
