@@ -927,10 +927,22 @@ variable "additional_cluster_properties" {
 # Reference: https://registry.terraform.io/providers/terraform-redhat/rhcs/latest/docs/resources/cluster_rosa_hcp#registry_config
 ##############################################################
 
+# Covers: description, registry_config, additional_trusted_ca, type, registry_sources, allowed_registries, blocked_registries, insecure_registries, allowed_registries_for_import, domain_name, insecure, platform_allowlist_id, default, nullable, condition, error_message
+# Does: Defines the complete typed registry policy, trust, and import contract.
+# Why: Typed nested fields expose cluster-wide effects and fail malformed input early.
+# Change: Allow or block lists alter pull policy; trusted CAs alter transport trust.
+# Trap: RHCS 1.7.7 requires a non-null registry_sources child for non-null config.
+# Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/cluster_rosa_hcp#nested-schema-for-registry_config
 variable "registry_config" {
   description = <<-EOT
     Cluster registry configuration. Null (the default) leaves the cluster on platform
-    defaults and restricts nothing. Updatable in place.
+    defaults and restricts nothing. Non-null changes are updatable in place.
+
+    RHCS 1.7.7 raises "Value Conversion Error" when a non-null value omits the
+    registry_sources child. This module supplies that complete child with null
+    members so CA-only input remains valid without sending empty source lists.
+    RHCS 1.7.7 also crashes when restoring an existing registry_config to null;
+    follow the recovery procedure in the module README instead of applying null.
 
     Fields:
 
@@ -1012,7 +1024,7 @@ variable "registry_config" {
       var.registry_config == null ||
       try(var.registry_config.additional_trusted_ca, null) == null ||
       alltrue([
-        for host, cert in var.registry_config.additional_trusted_ca :
+        for host, cert in coalesce(var.registry_config.additional_trusted_ca, {}) :
         host != "" && startswith(trimspace(cert), "-----BEGIN CERTIFICATE-----")
       ])
     )
@@ -1026,7 +1038,7 @@ variable "registry_config" {
       var.registry_config == null ||
       try(var.registry_config.allowed_registries_for_import, null) == null ||
       alltrue([
-        for entry in var.registry_config.allowed_registries_for_import :
+        for entry in coalesce(var.registry_config.allowed_registries_for_import, []) :
         try(entry.domain_name, null) != null && try(entry.domain_name, "") != ""
       ])
     )

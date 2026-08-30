@@ -277,7 +277,12 @@ module "cluster" {
   control_plane_log_s3_retention_days         = var.control_plane_log_s3_retention_days
   resource_suffix                             = random_id.resource_suffix.hex
 
-  # Registry configuration (trusted CAs, allowed/blocked registries, ImageStream imports)
+  # Covers: registry_config
+  # Does: Passes the root registry contract unchanged into the cluster module.
+  # Why: One normalization point prevents root and child workarounds from diverging.
+  # Change: Changing this value changes cluster-wide trust or registry policy.
+  # Trap: A non-empty allowlist denies registries absent from the realized policy.
+  # Evidence: https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/cluster_rosa_hcp#nested-schema-for-registry_config
   registry_config = var.registry_config
 
   # GitOps bootstrap configuration
