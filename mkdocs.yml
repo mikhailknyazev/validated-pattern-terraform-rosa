@@ -88,6 +88,11 @@ nav:
       - Local Multi-Repo Dev: guides/local-multi-repo-dev.md
       - Zero Egress ECR Access: guides/zero-egress-ecr-access.md
       - CI/CD: guides/ci-cd.md
+      - CI Device-Code Authentication: guides/ci-external-auth-device-code.md
+      - Jenkins on EKS - Mode A: guides/ci-device-code-jenkins-eks-mode-a.md
+      - Jenkins on EKS - Mode B: guides/ci-device-code-jenkins-eks-mode-b.md
+      - GitLab on EC2 - Mode A: guides/ci-device-code-gitlab-ec2-mode-a.md
+      - GitLab on EC2 - Mode B: guides/ci-device-code-gitlab-ec2-mode-b.md
       - Infra Nodes: guides/infra-nodes.md
       - Ingress Improvements: guides/improvements/ingress.md
   - Modules:

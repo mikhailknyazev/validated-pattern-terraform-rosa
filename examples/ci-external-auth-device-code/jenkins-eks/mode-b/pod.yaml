@@ -1,0 +1,46 @@
+# Purpose: Jenkins EKS agent for Mode B with IRSA-backed Secrets Manager access.
+# What this is not: This Pod does not create identity, RBAC, IAM or cloud resources.
+# Prerequisites: Apply the sibling ServiceAccount and policies; use an immutable image with required CLIs.
+# Authoritative references:
+# - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+# - https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html
+# Covers: apiVersion, kind, metadata, name, namespace, spec, restartPolicy, serviceAccountName, securityContext, runAsUser, runAsGroup, fsGroup, seccompProfile, type, containers, image, command, workingDir, allowPrivilegeEscalation, capabilities, drop, readOnlyRootFilesystem, volumeMounts, mountPath, volumes, emptyDir
+# Does: Runs one non-root Jenkins worker using the exact IRSA identity allowed to access the cache secret.
+# Why: Projected AWS credentials and emptyDir keep cloud and token state out of the image and persistent volumes.
+# Change: Another ServiceAccount, image or storage type changes the cache authority or credential-retention boundary.
+# Trap: Anyone able to launch a Pod as this ServiceAccount can act as the seeded person on ROSA.
+# Evidence: https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <ci-job-pod>
+  namespace: <ci-namespace>
+spec:
+  restartPolicy: Never
+  serviceAccountName: <ci-service-account>
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: oc
+      image: <registry>/oc-kubelogin-aws:<immutable-digest>
+      command: ["/bin/sh", "-c", "sleep infinity"]
+      workingDir: /workspace
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        readOnlyRootFilesystem: true
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}

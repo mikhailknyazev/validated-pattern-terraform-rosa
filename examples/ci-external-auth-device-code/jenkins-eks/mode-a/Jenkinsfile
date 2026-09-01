@@ -1,0 +1,53 @@
+// Purpose: Run Jenkins on EKS with one device-code sign-in per pipeline run.
+// What this is not: This pipeline creates no Entra, ROSA, IAM or RBAC object.
+// Prerequisites: Jenkins Kubernetes plugin, the sibling Pod template, common/, and reviewed CI environment values.
+// Authoritative references:
+// - https://www.jenkins.io/doc/book/pipeline/syntax/
+// - https://plugins.jenkins.io/kubernetes/
+// Covers: yamlFile, timeout, env:ROSA_AUTH_ROOT, env:ROSA_COMMON_DIR, env:ROSA_AUTH_TIMEOUT_SECONDS, env:TARGET_NAMESPACE, env:MANIFEST_DIR, env:DEPLOYMENT_NAME, env:HOME, --namespace, --filename, --timeout
+// Does: Uses the fixed Mode A entry point for bounded identity, deployment, rollout and guaranteed cleanup.
+// Why: One stage keeps the job-local ID-token cache available across every oc process without durable AWS custody.
+// Change: Another path, namespace, manifest directory or rollout target changes security posture or deployment authority.
+// Trap: Splitting authentication and deployment across Pods discards Mode A state and triggers another device-code sign-in.
+// Evidence: https://www.jenkins.io/doc/book/pipeline/syntax/
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile 'examples/ci-external-auth-device-code/jenkins-eks/mode-a/pod.yaml'
+    }
+  }
+  options {
+    timeout(time: 30, unit: 'MINUTES')
+  }
+  environment {
+    ROSA_AUTH_ROOT = 'examples/ci-external-auth-device-code/jenkins-eks/mode-a'
+    ROSA_COMMON_DIR = 'examples/ci-external-auth-device-code/common'
+    ROSA_AUTH_TIMEOUT_SECONDS = '300'
+    TARGET_NAMESPACE = '<target-namespace>'
+    MANIFEST_DIR = '<reviewed-manifest-directory>'
+    DEPLOYMENT_NAME = '<deployment-name>'
+    HOME = '/tmp'
+  }
+  stages {
+    stage('Authenticate and deploy') {
+      steps {
+        sh '''
+          set +x
+          umask 077
+          "$ROSA_AUTH_ROOT/rosa-auth.sh" status
+          "$ROSA_AUTH_ROOT/rosa-auth.sh" prepare
+          echo "Complete the printed device-code step on a trusted browser."
+          "$ROSA_AUTH_ROOT/rosa-auth.sh" whoami
+          "$ROSA_AUTH_ROOT/rosa-auth.sh" run -- apply --namespace="$TARGET_NAMESPACE" --filename="$MANIFEST_DIR"
+          "$ROSA_AUTH_ROOT/rosa-auth.sh" run -- rollout status "deployment/$DEPLOYMENT_NAME" --namespace="$TARGET_NAMESPACE" --timeout=4m
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      sh 'set +x; umask 077; "$ROSA_AUTH_ROOT/rosa-auth.sh" cleanup'
+      deleteDir()
+    }
+  }
+}

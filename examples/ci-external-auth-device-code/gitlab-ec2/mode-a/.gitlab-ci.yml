@@ -1,0 +1,39 @@
+# Purpose: Run GitLab on EC2 with one device-code sign-in per job.
+# What this is not: This job creates no Entra, ROSA, IAM or RBAC object.
+# Prerequisites: One immutable EC2 runner image, common/, this path directory and reviewed CI variables.
+# Authoritative references:
+# - https://docs.gitlab.com/ci/yaml/
+# - https://github.com/int128/kubelogin/blob/v1.36.2/docs/setup.md
+# Covers: variables, ROSA_AUTH_ROOT, ROSA_COMMON_DIR, ROSA_AUTH_TIMEOUT_SECONDS, TARGET_NAMESPACE, MANIFEST_DIR, DEPLOYMENT_NAME, HOME, stages, rosa-deploy, stage, timeout, script, after_script, --namespace, --filename, --timeout
+# Does: Uses the fixed Mode A entry point for bounded identity, deployment, rollout and guaranteed cleanup.
+# Why: One job keeps the job-local ID-token cache available across every oc process without durable AWS custody.
+# Change: Another path, namespace, manifest directory or rollout target changes security posture or deployment authority.
+# Trap: Splitting authentication and deployment across jobs discards Mode A state and triggers another device-code sign-in.
+# Evidence: https://docs.gitlab.com/ci/yaml/
+variables:
+  ROSA_AUTH_ROOT: "examples/ci-external-auth-device-code/gitlab-ec2/mode-a"
+  ROSA_COMMON_DIR: "examples/ci-external-auth-device-code/common"
+  ROSA_AUTH_TIMEOUT_SECONDS: "300"
+  TARGET_NAMESPACE: "<target-namespace>"
+  MANIFEST_DIR: "<reviewed-manifest-directory>"
+  DEPLOYMENT_NAME: "<deployment-name>"
+  HOME: "/tmp"
+
+stages:
+  - deploy
+
+rosa-deploy:
+  stage: deploy
+  timeout: 15m
+  script:
+    - set +x
+    - umask 077
+    - '"${ROSA_AUTH_ROOT}/rosa-auth.sh" status'
+    - '"${ROSA_AUTH_ROOT}/rosa-auth.sh" prepare'
+    - 'echo "Complete the printed device-code step on a trusted browser."'
+    - '"${ROSA_AUTH_ROOT}/rosa-auth.sh" whoami'
+    - '"${ROSA_AUTH_ROOT}/rosa-auth.sh" run -- apply --namespace="${TARGET_NAMESPACE}" --filename="${MANIFEST_DIR}"'
+    - '"${ROSA_AUTH_ROOT}/rosa-auth.sh" run -- rollout status "deployment/${DEPLOYMENT_NAME}" --namespace="${TARGET_NAMESPACE}" --timeout=4m'
+  after_script:
+    - 'set +x; umask 077; "${ROSA_AUTH_ROOT}/rosa-auth.sh" cleanup'
+  # Never place OIDC_TOKEN_CACHE_DIR in cache: or artifacts:.

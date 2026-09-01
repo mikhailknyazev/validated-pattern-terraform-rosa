@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CI device-code external authentication examples**: Four complete paths cover Jenkins agents on EKS and GitLab runners on EC2 in per-run Mode A or Secrets Manager-backed Mode B, with fixed-mode entry points, semantic kubeconfig tests, bounded waits and explicit human-identity custody.
 - **External auth providers support** (`external_auth_providers_enabled`): New nullable bool variable wired through root and cluster modules to `rhcs_cluster_rosa_hcp`. When `true`, HTPasswd identity providers (break-glass and bootstrap admin) are automatically disabled. New `make cluster.<name>.break-glass-login` command uses `rosa create break-glass-credential` for temporary admin access. Bootstrap flow uses break-glass credentials when external auth is enabled. Cross-variable validation prevents `enable_cluster_admin = true` alongside external auth. Create-time only (immutable after cluster creation). Enabled in `clusters/rhai/terraform.tfvars`.
 - **Local multi-repo dev (Gitea + Argo)**: [`docs/guides/local-multi-repo-dev.md`](docs/guides/local-multi-repo-dev.md) — `bootstrap-gitea`, `dev.private.sync`, reference clone layout; optional `dev.public.apply-local` escape hatch
 - **Private GitOps E2E runner**: `scripts/cluster/e2e-private-gitops.sh` — apply → `bootstrap-gitea` → `dev.private.sync` → Argo verification (`E2E_CLUSTER_NAME`, `E2E_CLUSTER_PROFILE` optional).

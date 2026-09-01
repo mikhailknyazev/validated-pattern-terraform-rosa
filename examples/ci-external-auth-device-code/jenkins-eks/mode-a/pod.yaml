@@ -1,0 +1,43 @@
+# Purpose: Jenkins EKS agent for Mode A without AWS token-store access.
+# What this is not: This Pod does not create identity, RBAC or cloud resources.
+# Prerequisites: Substitute an immutable image containing oc, kubectl, kubelogin and GNU timeout.
+# Authoritative references:
+# - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+# Covers: apiVersion, kind, metadata, name, spec, restartPolicy, securityContext, runAsUser, runAsGroup, fsGroup, seccompProfile, type, containers, image, command, workingDir, allowPrivilegeEscalation, capabilities, drop, readOnlyRootFilesystem, volumeMounts, mountPath, volumes, emptyDir
+# Does: Runs one non-root Jenkins worker with writable workspace and job-local token storage only.
+# Why: Mode A needs no AWS credential chain; a fresh emptyDir confines token state to this Pod lifecycle.
+# Change: A mutable image, writable root or persistent volume expands the credential-bearing surface.
+# Trap: A restarted or retained Pod can outlive the job's intended custody window unless cleanup still runs.
+# Evidence: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <ci-job-pod>
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: oc
+      image: <registry>/oc-kubelogin:<immutable-digest>
+      command: ["/bin/sh", "-c", "sleep infinity"]
+      workingDir: /workspace
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        readOnlyRootFilesystem: true
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: workspace
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}

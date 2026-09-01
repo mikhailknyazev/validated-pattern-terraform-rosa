@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "<eks-oidc-provider-arn>"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "<oidc-provider-id>:aud": "sts.amazonaws.com",
+          "<oidc-provider-id>:sub": "system:serviceaccount:<ci-namespace>:<ci-service-account>"
+        }
+      }
+    }
+  ]
+}
