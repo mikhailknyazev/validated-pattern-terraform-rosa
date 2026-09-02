@@ -1,0 +1,98 @@
+// Purpose: Preview and explicitly approve BYO subnet ownership-tag cleanup in Jenkins.
+// What this is not: This job does not discover subnets or carry static AWS credentials.
+// Prerequisites: The companion Pod, ServiceAccount, IAM policy, OCM Secret, and tool source.
+// Authoritative references: https://www.jenkins.io/doc/pipeline/steps/core/#archiveartifacts-archive-the-artifacts
+pipeline {
+  agent {
+    kubernetes {
+      // Covers: yamlFile
+      // Does: Selects the reviewed in-Pod agent definition shipped beside this Jenkinsfile.
+      // Why: The Pod fixes IRSA identity and token-file custody before any command runs.
+      // Change: A different file changes the credential and runtime boundary of this job.
+      // Trap: Do not substitute a generic agent carrying static AWS access keys.
+      // Evidence: https://plugins.jenkins.io/kubernetes/
+      yamlFile 'examples/byo-subnet-tags/jenkins/pod.yaml'
+    }
+  }
+  parameters {
+    // Covers: string(name: SUBNET_IDS), string(name: ASSUME_ABSENT_IDS), booleanParam(name: APPLY_CHANGES)
+    // Does: Makes the exact subnet scope, per-id assertions, and mutation approval visible in the build form.
+    // Why: Deletion remains off unless a reviewer changes APPLY_CHANGES for this build.
+    // Change: IDs are whitespace-delimited; each assertion applies only to a matching observed tag suffix.
+    // Trap: APPLY_CHANGES does not override present or unobserved states; assertions must still be explicit per id.
+    // Evidence: https://www.jenkins.io/doc/book/pipeline/syntax/#parameters
+    string(name: 'SUBNET_IDS', defaultValue: '', description: 'Explicit subnet ids separated by spaces')
+    string(name: 'ASSUME_ABSENT_IDS', defaultValue: '', description: 'Exact cluster ids asserted absent')
+    booleanParam(name: 'APPLY_CHANGES', defaultValue: false, description: 'Delete proved or asserted exact keys')
+  }
+  environment {
+    // Covers: AWS_REGION, OCM_TOKEN_FILE, REPORT_JSON, SNAPSHOT_DIR
+    // Does: Fixes the AWS region and file-only paths for the OCM credential and retained evidence.
+    // Why: The token value never enters Jenkins environment or command arguments; reports remain archivable.
+    // Change: Change region and paths only with the matching Pod mounts and artifact pattern.
+    // Trap: Never replace OCM_TOKEN_FILE with a token-valued credential binding.
+    // Evidence: https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod
+    AWS_REGION = '<aws-region>'
+    OCM_TOKEN_FILE = '/var/run/secrets/ocm/token'
+    REPORT_JSON = 'artifacts/byo-subnet-tags.json'
+    SNAPSHOT_DIR = 'artifacts/snapshots'
+  }
+  stages {
+    stage('Inspect') {
+      steps {
+        container('tools') {
+          // Covers: clean, --region, --subnet-id, --ocm-token-file, --assume-absent, --report-json
+          // Does: Runs the clean classifier without --apply, so this stage cannot call DeleteTags.
+          // Why: The archived preview exposes proved, asserted, and refused rows before mutation is enabled.
+          // Change: Parameter edits change only exact ids; this stage remains dry-run under every setting.
+          // Trap: Arrays, not eval, preserve identifier boundaries and prevent wildcard expansion.
+          // Evidence: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
+          sh '''#!/usr/bin/env bash
+set -euo pipefail
+read -r -a subnet_ids <<<"$SUBNET_IDS"
+read -r -a assumed_ids <<<"$ASSUME_ABSENT_IDS"
+command=(python3 scripts/operations/byo-subnet-tags.py clean --region "$AWS_REGION" --ocm-token-file "$OCM_TOKEN_FILE" --report-json "$REPORT_JSON")
+for subnet_id in "${subnet_ids[@]}"; do command+=(--subnet-id "$subnet_id"); done
+for cluster_id in "${assumed_ids[@]}"; do command+=(--assume-absent "$cluster_id"); done
+"${command[@]}"
+'''
+        }
+      }
+    }
+    stage('Apply exact deletions') {
+      when {
+        expression { params.APPLY_CHANGES }
+      }
+      steps {
+        container('tools') {
+          // Covers: clean, --apply, --yes, --snapshot-dir, --report-json
+          // Does: Re-runs classification and visibly enables non-interactive exact-key deletion plus verification.
+          // Why: Both mutation flags appear in the job definition so approval is reviewable before execution.
+          // Change: Removing either --apply or the parameter approval prevents unattended mutation.
+          // Trap: --yes skips only the prompt; it never bypasses liveness, snapshot, or byte-equality checks.
+          // Evidence: https://docs.aws.amazon.com/cli/latest/reference/ec2/delete-tags.html
+          sh '''#!/usr/bin/env bash
+set -euo pipefail
+read -r -a subnet_ids <<<"$SUBNET_IDS"
+read -r -a assumed_ids <<<"$ASSUME_ABSENT_IDS"
+command=(python3 scripts/operations/byo-subnet-tags.py clean --apply --yes --region "$AWS_REGION" --ocm-token-file "$OCM_TOKEN_FILE" --snapshot-dir "$SNAPSHOT_DIR" --report-json "$REPORT_JSON")
+for subnet_id in "${subnet_ids[@]}"; do command+=(--subnet-id "$subnet_id"); done
+for cluster_id in "${assumed_ids[@]}"; do command+=(--assume-absent "$cluster_id"); done
+"${command[@]}"
+'''
+        }
+      }
+    }
+  }
+  post {
+    always {
+      // Covers: archiveArtifacts.artifacts, archiveArtifacts.allowEmpty, archiveArtifacts.fingerprint
+      // Does: Retains the JSON report and any pre-delete snapshot with a Jenkins content fingerprint.
+      // Why: The report records every proof or assertion and the snapshot supports exact post-run review.
+      // Change: Tighten the pattern only if both dry-run and apply outputs remain represented.
+      // Trap: allowEmpty covers a fail-closed pre-report refusal; it must not be interpreted as a clean run.
+      // Evidence: https://www.jenkins.io/doc/pipeline/steps/core/#archiveartifacts-archive-the-artifacts
+      archiveArtifacts artifacts: 'artifacts/**/*.json', allowEmpty: true, fingerprint: true
+    }
+  }
+}

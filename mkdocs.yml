@@ -103,5 +103,15 @@ nav:
       - Scripts: operations/scripts.md
       - GitOps Bootstrap: operations/bootstrap-gitops.md
       - Validation: operations/validation.md
+      # Covers: Overview, Manual, Jenkins
+      # Does: Publishes the hub and both complete execution paths under one operations navigation group.
+      # Why: Readers can choose one credential path without searching unrelated guides.
+      # Change: Removing a child makes that self-contained path undiscoverable from the documentation site.
+      # Trap: Keep all three files together; the hub does not replace either standalone procedure.
+      # Evidence: https://www.mkdocs.org/user-guide/configuration/#nav
+      - BYO Subnet Tag Lifecycle:
+          - Overview: operations/byo-subnet-tags.md
+          - Manual Workstation: operations/byo-subnet-tags-manual.md
+          - Jenkins on Kubernetes: operations/byo-subnet-tags-jenkins.md
   - Reference:
       - Changelog: reference/changelog.md

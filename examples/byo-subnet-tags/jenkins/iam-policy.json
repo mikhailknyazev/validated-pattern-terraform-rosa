@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadNamedSubnetTags",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeSubnets",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DeleteClusterKeysFromNamedSubnets",
+      "Effect": "Allow",
+      "Action": "ec2:DeleteTags",
+      "Resource": [
+        "<subnet-arn-1>",
+        "<subnet-arn-2>"
+      ],
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "aws:TagKeys": "kubernetes.io/cluster/*"
+        }
+      }
+    }
+  ]
+}

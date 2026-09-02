@@ -1,0 +1,71 @@
+# Purpose: Run one Jenkins agent with IRSA and a file-mounted OCM token.
+# What this is not: This Pod does not discover subnets or persist credentials outside the mounted Secret.
+# Prerequisites: The companion ServiceAccount, Secret, and an image containing Python 3, AWS CLI, and the tool.
+# Authoritative references: https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod
+# Covers: apiVersion, kind, metadata
+# Does: Declares one namespaced Kubernetes Pod object using the stable core API.
+# Why: Jenkins supplies the reviewed command while this object fixes identity and credential mounts.
+# Change: A different kind or API would not satisfy the Kubernetes plugin's agent-Pod contract.
+# Trap: Metadata below contains only generic workload labels, never estate identifiers.
+# Evidence: https://kubernetes.io/docs/concepts/workloads/pods/
+apiVersion: v1
+kind: Pod
+metadata:
+  # Covers: labels, app
+  # Does: Gives the disposable agent a stable workload label for Jenkins-side inspection.
+  # Why: A path-specific label distinguishes this job from unrelated agents in the namespace.
+  # Change: A different label changes only selection and observability, not AWS or OCM authority.
+  # Trap: Do not place account, cluster, VPC, or subnet identifiers in labels.
+  # Evidence: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+  labels:
+    app: byo-subnet-tags
+  # Covers: spec, serviceAccountName, restartPolicy, containers
+  # Does: Selects the IRSA identity and makes a completed agent Pod terminal rather than self-restarting.
+  # Why: One reviewed job should map to one credential session and one archived report.
+  # Change: A different service account changes AWS custody; Always would rerun failed commands outside Jenkins control.
+  # Trap: The named account must carry only the exact-subnet policy shown in this bundle.
+  # Evidence: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
+spec:
+  serviceAccountName: byo-subnet-tags
+  restartPolicy: Never
+  containers:
+    # Covers: name, image, command, args, volumeMounts
+    # Does: Keeps the Jenkins agent container alive until the pipeline supplies an explicit command.
+    # Why: The reviewed pipeline, not image startup, decides whether the clean verb receives --apply and --yes.
+    # Change: Pin image to an approved digest; changing the sleep command alters only agent lifetime.
+    # Trap: A mutable image tag can change Python or AWS CLI behavior between review and execution.
+    # Evidence: https://kubernetes.io/docs/concepts/containers/images/#image-pull-policy
+    - name: tools
+      image: <approved-tool-image-by-digest>
+      command: ["sh", "-c"]
+      args: ["sleep 99d"]
+      volumeMounts:
+        - name: ocm-token
+          # Covers: name, mountPath, readOnly
+          # Does: Exposes the OCM token as a read-only file at the path used by the Jenkinsfile.
+          # Why: File projection keeps the token out of argv and echo-able environment values.
+          # Change: If the path changes, update OCM_TOKEN_FILE in the Jenkinsfile to the same path.
+          # Trap: Removing readOnly lets a compromised step replace evidence used by a later step.
+          # Evidence: https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod
+          mountPath: /var/run/secrets/ocm
+          readOnly: true
+  # Covers: volumes, name, secret
+  # Does: Declares one volume backed only by the named Kubernetes Secret.
+  # Why: A Secret volume projects the OCM bearer without putting its value in argv or environment.
+  # Change: A different source changes credential custody and must be reviewed with the Jenkinsfile.
+  # Trap: Do not replace this with an environment-variable secretKeyRef.
+  # Evidence: https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod
+  volumes:
+    - name: ocm-token
+      secret:
+        # Covers: secretName, defaultMode, items, key, path
+        # Does: Projects only the token key with owner-read permissions at /var/run/secrets/ocm/token.
+        # Why: The tool refuses token files accessible to group or other users.
+        # Change: Change the Secret or key only with the creation command in the Jenkins guide.
+        # Trap: Decimal 256 is octal 0400 in Kubernetes YAML; broader modes make inventory state unobserved.
+        # Evidence: https://kubernetes.io/docs/concepts/configuration/secret/#secret-files-permissions
+        secretName: byo-subnet-tags-ocm
+        defaultMode: 256
+        items:
+          - key: token
+            path: token

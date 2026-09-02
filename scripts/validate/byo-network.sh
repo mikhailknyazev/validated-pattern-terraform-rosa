@@ -15,6 +15,17 @@ MIN_PRIVATE_SUBNETS=3
 ZERO_EGRESS=false
 MULTI_AZ=true
 REQUIRE_CLOUDWATCH=false
+# Purpose: Add an opt-in, read-only subnet user-tag capacity check.
+# What this is not: This block does not discover or delete cluster ownership tags.
+# Prerequisites: Python 3 and scripts/operations/byo-subnet-tags.py in this checkout.
+# Authoritative references: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-restrictions
+# Covers: env:CHECK_SUBNET_TAG_CAPACITY
+# Does: Tracks whether the caller selected the delegated capacity report.
+# Why: False preserves the existing validation path until a caller opts into the additional reads.
+# Change: Only --check-subnet-tag-capacity changes this value during argument parsing.
+# Trap: This flag must never select the clean verb or any EC2 mutation.
+# Evidence: Syntax-only: Bash boolean sentinel consumed below in the same script.
+CHECK_SUBNET_TAG_CAPACITY=false
 REQUIRED_ENDPOINT_SUFFIXES=("s3" "sts" "ecr.api" "ecr.dkr")
 OPTIONAL_ENDPOINT_SUFFIXES=("logs" "monitoring")
 
@@ -49,9 +60,20 @@ while [[ $# -gt 0 ]]; do
 		REQUIRE_CLOUDWATCH=true
 		shift
 		;;
+		# Covers: --check-subnet-tag-capacity, env:CHECK_SUBNET_TAG_CAPACITY
+		# Does: Delegates capacity accounting for the validated private subnets to the read-only check verb.
+		# Why: Pre-create validation is the natural point to detect exhausted EC2 user-tag slots.
+		# Change: Omitting the flag leaves the existing network validation path unchanged.
+		# Trap: The caller enumerates subnets here; the lifecycle tool never broadens scope by discovering them.
+		# Evidence: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-restrictions
+	--check-subnet-tag-capacity)
+		CHECK_SUBNET_TAG_CAPACITY=true
+		shift
+		;;
 	-h | --help)
 		echo "Usage: $0 [--vpc-id VPC_ID] [--region REGION] [--cluster-name NAME]"
 		echo "       [--zero-egress] [--multi-az|--single-az] [--require-cloudwatch]"
+		echo "       [--check-subnet-tag-capacity]"
 		exit 0
 		;;
 	*)
@@ -151,6 +173,32 @@ if [[ "$PRIVATE_COUNT" -ge "$MIN_PRIVATE_SUBNETS" ]]; then
 	pass "Private subnets: $PRIVATE_COUNT (minimum: $MIN_PRIVATE_SUBNETS)"
 else
 	fail "Private subnets: $PRIVATE_COUNT — need at least $MIN_PRIVATE_SUBNETS"
+fi
+
+if [[ "$CHECK_SUBNET_TAG_CAPACITY" == "true" ]]; then
+	tag_capacity_subnet_ids=()
+	while IFS= read -r subnet_id; do
+		[[ -n "$subnet_id" ]] && tag_capacity_subnet_ids+=("$subnet_id")
+	done < <(echo "$PRIVATE_SUBNETS" | jq -r '.[].SubnetId')
+	if [[ ${#tag_capacity_subnet_ids[@]} -eq 0 ]]; then
+		fail "Subnet tag capacity: no private subnets were found to check"
+	else
+		# Covers: env:TAG_TOOL, --region, --subnet-id
+		# Does: Runs one read-only implementation against the exact private-subnet ids this validator already read.
+		# Why: Delegation prevents capacity arithmetic from diverging between validation and housekeeping.
+		# Change: Removing an id narrows the check; adding one checks that explicit subnet without VPC discovery.
+		# Trap: A failed or unreadable check is reported as a validation failure, never as free capacity.
+		# Evidence: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-subnets.html
+		TAG_TOOL=(python3 "$SCRIPT_DIR/../operations/byo-subnet-tags.py" check --region "$REGION")
+		for subnet_id in "${tag_capacity_subnet_ids[@]}"; do
+			TAG_TOOL+=(--subnet-id "$subnet_id")
+		done
+		if "${TAG_TOOL[@]}"; then
+			pass "Subnet tag capacity: all private subnets have free user-tag slots"
+		else
+			fail "Subnet tag capacity: check reported a full subnet or unreadable tags"
+		fi
+	fi
 fi
 
 AZ_COUNT=$(echo "$PRIVATE_SUBNETS" | jq '[.[].AvailabilityZone] | unique | length')
