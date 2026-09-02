@@ -63,3 +63,18 @@ gitops_git_repo_url     = null
 gitops_git_path         = null
 
 enable_timing = true
+
+# Registry Image Mirrors
+# Redirect image pulls to a reachable mirror. On a zero-egress cluster this is what makes
+# third-party operator content installable. See docs/guides/image-mirrors.md.
+#
+# Key   = the SOURCE repository path (no scheme, no ":tag", no "@sha256:...").
+# Value = ordered list of mirrors; the first reachable one wins.
+#
+# Only DIGEST-pinned references are rewritten -- images referenced by tag are not -- and
+# the mirror must hold byte-identical manifests for the digests to match.
+#
+# image_mirrors = {
+#   "registry.redhat.io" = ["mirror.example.com/redhat"]
+#   "quay.io/prometheus" = ["mirror.example.com/quay-prometheus"]
+# }

@@ -121,5 +121,25 @@ enable_gitops_bootstrap = true # Enable GitOps operator installation after clust
 gitops_git_repo_url     = "https://github.com/rh-mobb/rosa-cluster-config.git"
 gitops_git_path         = "dev/pczarkow" # Path to cluster configuration directory in Git repo
 
-# Debug / Timing
+# Covers: enable_timing
+# Does: Retains phase timing output for this example cluster lifecycle.
+# Why: Mirror acceptance and guest realization can diverge substantially in time.
+# Change: Disabling it removes timing receipts without changing cluster behavior.
+# Trap: Terraform timing alone never proves guest mirror realization completed.
+# Evidence: Observed behavior, not vendor-documented
 enable_timing = true # Enable cluster creation timing capture
+
+# Registry Image Mirrors
+# Redirect image pulls to a reachable mirror. On a zero-egress cluster this is what makes
+# third-party operator content installable. See docs/guides/image-mirrors.md.
+#
+# Key   = the SOURCE repository path (no scheme, no ":tag", no "@sha256:...").
+# Value = ordered list of mirrors; the first reachable one wins.
+#
+# Only DIGEST-pinned references are rewritten -- images referenced by tag are not -- and
+# the mirror must hold byte-identical manifests for the digests to match.
+#
+# image_mirrors = {
+#   "registry.redhat.io" = ["mirror.example.com/redhat"]
+#   "quay.io/prometheus" = ["mirror.example.com/quay-prometheus"]
+# }

@@ -235,3 +235,15 @@ output "control_plane_log_s3_bucket_name" {
   value       = var.enable_control_plane_log_forwarding && var.control_plane_log_s3_enabled && length(aws_s3_bucket.control_plane_logs) > 0 ? aws_s3_bucket.control_plane_logs[0].id : null
   sensitive   = false
 }
+
+# Covers: description, value, sensitive
+# Does: Exposes mirror identifiers retained in Terraform state after the last apply.
+# Why: Identifiers support later automation without claiming a fresh management API read.
+# Change: Removing the output removes local observability but does not change service state.
+# Trap: This state output cannot prove guest projection or current management state.
+# Evidence: https://developer.hashicorp.com/terraform/language/values/outputs
+output "image_mirror_ids" {
+  description = "Map of source repository path to image-mirror id as recorded in Terraform state at the last apply. Empty when image_mirrors is not set. This is not a live management-API or guest read."
+  value       = { for source_path, mirror in rhcs_image_mirror.this : source_path => mirror.id }
+  sensitive   = false
+}
