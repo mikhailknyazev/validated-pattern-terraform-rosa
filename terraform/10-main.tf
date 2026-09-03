@@ -240,9 +240,16 @@ module "cluster" {
 
   # Break-glass HTPasswd (optional). Bootstrap uses module.bootstrap_admin instead (#29).
   # Disabled when external_auth_providers_enabled — RHCS API rejects rhcs_identity_provider.
-  enable_identity_provider     = var.enable_cluster_admin && var.persists_through_sleep && !(var.external_auth_providers_enabled == true)
-  admin_username               = var.admin_username
-  admin_password_for_bootstrap = var.enable_cluster_admin && !(var.external_auth_providers_enabled == true) ? (var.admin_password_override != null ? var.admin_password_override : random_password.admin_password[0].result) : null
+  # Covers: enable_identity_provider, create_cluster_credentials_secret, admin_username, admin_password_for_bootstrap
+  # Does: Passes plan-known lifecycle intent and apply-time password data to the cluster module.
+  # Why: Separating identity from value permits greenfield and post-create toggles without targeting.
+  # Change: Disabling the root boolean removes every long-lived administrator-owned resource.
+  # Trap: Replacing the intent boolean with password nullability makes count unknown at plan time.
+  # Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/count
+  enable_identity_provider          = var.enable_cluster_admin && var.persists_through_sleep && !(var.external_auth_providers_enabled == true)
+  create_cluster_credentials_secret = var.enable_cluster_admin && !(var.external_auth_providers_enabled == true)
+  admin_username                    = var.admin_username
+  admin_password_for_bootstrap      = var.enable_cluster_admin && !(var.external_auth_providers_enabled == true) ? (var.admin_password_override != null ? var.admin_password_override : random_password.admin_password[0].result) : null
 
   # External authentication providers (create-time only, immutable after creation)
   external_auth_providers_enabled = var.external_auth_providers_enabled
@@ -415,9 +422,16 @@ resource "random_password" "admin_password" {
 module "bootstrap_admin" {
   source = "../modules/infrastructure/bootstrap-admin"
 
-  enabled    = var.enable_bootstrap_admin_user && !(var.external_auth_providers_enabled == true)
-  cluster_id = var.bootstrap_admin_cluster_id
-  password   = var.bootstrap_admin_password
+  # Covers: enabled, cluster_id, password, generate_password
+  # Does: Converts root input presence into a plan-known bootstrap password-source choice.
+  # Why: The child must not derive resource identity from an apply-time generated value.
+  # Change: Supplying a password selects caller ownership; null selects child generation.
+  # Trap: Passing only password leaves an unknown caller value ambiguous to the child.
+  # Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/count
+  enabled           = var.enable_bootstrap_admin_user && !(var.external_auth_providers_enabled == true)
+  cluster_id        = var.bootstrap_admin_cluster_id
+  password          = var.bootstrap_admin_password
+  generate_password = var.bootstrap_admin_password == null
 }
 
 # Break-glass identity provider + cluster credentials secret are created in the cluster module

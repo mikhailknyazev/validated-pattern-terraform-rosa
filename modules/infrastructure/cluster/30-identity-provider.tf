@@ -8,20 +8,34 @@ locals {
   break_glass_enabled    = var.enable_identity_provider && local.persists_through_sleep && !(var.external_auth_providers_enabled == true)
   break_glass_password   = var.admin_password_for_bootstrap != null ? var.admin_password_for_bootstrap : "CHANGE_ME_PASSWORD_NOT_SET"
   break_glass_cluster_id = length(rhcs_cluster_rosa_hcp.main) > 0 ? one(rhcs_cluster_rosa_hcp.main[*].id) : null
-  # Create credentials secret when break-glass password is supplied (enable_cluster_admin at root).
-  # Survives sleep even when enable_identity_provider is false (IDP torn down with persists_through_sleep).
-  create_credentials_secret = var.admin_password_for_bootstrap != null
+  # Resource identity follows caller intent, never the generated password. The
+  # separate boolean keeps the secret present while a sleeping cluster removes
+  # its IDP and makes greenfield cardinality known before the password exists.
+  # Covers: create_credentials_secret, condition, error_message
+  # Does: Counts credentials from caller intent and requires a password only at apply.
+  # Why: A generated password is unknown during planning but valid inside resource bodies.
+  # Change: False removes the credentials secret while true preserves it through cluster sleep.
+  # Trap: Deriving count from password nullability recreates the greenfield count failure.
+  # Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/count
+  create_credentials_secret = var.create_cluster_credentials_secret
 }
 
 module "break_glass_htpasswd" {
   source = "../htpasswd-idp"
 
-  enabled     = local.break_glass_enabled
-  cluster_id  = local.break_glass_cluster_id
-  password    = local.break_glass_enabled ? local.break_glass_password : null
-  idp_name    = var.admin_username
-  username    = var.admin_username
-  admin_group = var.admin_group
+  # Covers: enabled, cluster_id, password, generate_password, idp_name, username, admin_group
+  # Does: Supplies one long-lived administrator and fixes its password source as caller-owned.
+  # Why: The root-generated password is unknown at plan time and cannot decide child count.
+  # Change: False prevents a second child generator while preserving the supplied password.
+  # Trap: Changing this to null makes child cardinality depend on password nullability again.
+  # Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/count
+  enabled           = local.break_glass_enabled
+  cluster_id        = local.break_glass_cluster_id
+  password          = local.break_glass_enabled ? local.break_glass_password : null
+  generate_password = false
+  idp_name          = var.admin_username
+  username          = var.admin_username
+  admin_group       = var.admin_group
 
   depends_on = [
     rhcs_cluster_rosa_hcp.main
@@ -63,6 +77,13 @@ resource "aws_secretsmanager_secret" "cluster_credentials" {
   depends_on = [
     rhcs_cluster_rosa_hcp.main
   ]
+
+  lifecycle {
+    precondition {
+      condition     = var.admin_password_for_bootstrap != null
+      error_message = "create_cluster_credentials_secret requires admin_password_for_bootstrap; the password may be unknown during plan but must be supplied at apply."
+    }
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "cluster_credentials" {

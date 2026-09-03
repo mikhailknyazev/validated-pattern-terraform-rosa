@@ -98,6 +98,97 @@ aws secretsmanager get-secret-value \
 
 Or use `make cluster.<name>.show-credentials` / `scripts/utils/get-admin-password.sh`.
 
+### Turn the long-lived administrator on or off at any point
+
+`enable_cluster_admin` can be set before the cluster exists or changed on an
+existing cluster, in either direction, while Terraform still generates the
+password. All three transitions plan without `-target`:
+
+| Transition | Planned result |
+|---|---|
+| Enable on a greenfield workspace | creates the generated password, identity provider, `cluster-admins` membership and credentials secret alongside the cluster |
+| Enable on an existing cluster | creates those same resources; the cluster itself is neither updated nor replaced |
+| Disable on an existing cluster | deletes those same resources; the cluster itself is neither updated nor replaced |
+
+The target-first password workaround is retired. A count predicate may not
+reach anything unknown at plan time. A generated password is a resource output,
+even when configuration later treats it like a local secret, so it belongs only
+inside resource bodies; caller-known booleans control cardinality.
+
+`enable_cluster_admin` controls the HTPasswd identity provider, its
+`cluster-admins` membership, the generated password, and the credentials secret.
+Its resource counts depend only on caller configuration, so a generated password
+may remain unknown during planning without requiring a target-first apply.
+The root also passes the password-source choice separately to the shared
+HTPasswd module. Without that second plan-known input, the child would recreate
+the same `Invalid count argument` while deciding whether to generate another
+password.
+
+The shared and bootstrap modules also use a lazy conditional when validating an
+optional password. The former `var.password == null || length(var.password) >=
+14` expression fails on an omitted password with Terraform 1.5.0, 1.9.8,
+1.10.5 and 1.11.0, and passes on 1.12.2. Because this repository declares
+Terraform `>= 1.5.0`, the conditional form avoids `length(null)` across the
+supported floor while still rejecting a supplied password shorter than 14
+characters.
+
+**Disabling destroys the credential and re-enabling issues a different one.**
+The generated password is a managed resource, so turning the administrator off
+deletes it together with the Secrets Manager object, and turning it back on
+generates a new value. Anything holding the previous password stops working at
+that point. Set `admin_password_override` when one specific password has to
+survive the toggle.
+
+```bash
+# Purpose: preview adding or removing the complete long-lived administrator path.
+# What this is not: a successful plan or apply is not proof that OCM has realized
+# the identity provider or that Secrets Manager has completed deletion.
+# Prerequisites: an existing built-in-OAuth cluster, Terraform 1.5.0, RHCS 1.7.7,
+# an OCM subject allowed to manage IDPs, and AWS permission for the named secret.
+# Authoritative references:
+# - https://registry.terraform.io/providers/terraform-redhat/rhcs/1.7.7/docs/resources/identity_provider
+# - https://docs.aws.amazon.com/secretsmanager/latest/userguide/manage_delete-secret.html
+# Covers: plan, apply
+# Does: Plans and applies one explicit long-lived administrator lifecycle transition.
+# Why: The same reviewed boolean must control the IDP, membership, password, and secret.
+# Change: Set true to add every surface or false to remove every surface.
+# Trap: External-authentication clusters have no built-in OAuth identity-provider surface.
+# Evidence: https://developer.hashicorp.com/terraform/cli/commands/plan
+# Omission: the default false creates no long-lived HTPasswd administrator.
+terraform -chdir=terraform plan -var='enable_cluster_admin=<true-or-false>'
+terraform -chdir=terraform apply -var='enable_cluster_admin=<true-or-false>'
+```
+
+Verify the three owning authorities independently after apply:
+
+```bash
+# Purpose: confirm the IDP, administrator membership, and secret lifecycle where
+# each is owned instead of treating Terraform completion as realization proof.
+# What this is not: these reads do not prove that an already-issued OAuth session
+# was invalidated when the identity provider was removed.
+# Prerequisites: replace the placeholders and authenticate both CLIs read-only.
+# Authoritative references:
+# - https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/authentication_and_authorization/sts-using-idp
+# - https://docs.aws.amazon.com/cli/latest/reference/secretsmanager/describe-secret.html
+# Covers: --cluster, --secret-id
+# Does: Reads the IDP, group membership, and credential from their owning authorities.
+# Why: Independent reads prevent Terraform completion from standing in for realization.
+# Change: After enable expect all three; after disable expect all three absent.
+# Trap: Scheduled secret deletion is not absence; inspect the returned deletion state.
+# Evidence: https://docs.aws.amazon.com/cli/latest/reference/secretsmanager/describe-secret.html
+# Omission: skipping the AWS read can mistake scheduled deletion for absence.
+rosa list idps --cluster <cluster-name> -o json
+oc get group cluster-admins -o json
+aws secretsmanager describe-secret --secret-id <cluster-name>-credentials
+```
+
+Removal prevents new logins through this HTPasswd provider. It does not, by
+itself, prove that previously issued OAuth access tokens have stopped working;
+verify session revocation separately when immediate invalidation is required.
+The targeted `module.bootstrap_admin` workflow remains intentional: it isolates
+temporary bootstrap credentials from unrelated cluster reconciliation and is not
+retired by this lifecycle fix.
+
 ## External authentication providers
 
 When `external_auth_providers_enabled = true` in `terraform.tfvars`, the cluster uses external OIDC identity providers instead of the built-in OAuth server. This is a **create-time only** setting (immutable after cluster creation).
