@@ -84,6 +84,13 @@ nav:
       - Enablement Guide: deployment/enablement.md
       - Cluster Configurations: deployment/cluster-configurations.md
   - Guides:
+# Covers: Built-in OAuth with OpenID Connect
+# Does: Adds the OpenID provider guide to the rendered documentation navigation.
+# Why: Operators must discover the feature and its state-custody warning before use.
+# Change: Removing this entry leaves the guide built but absent from normal navigation.
+# Trap: A wrong target passes YAML parsing but fails the strict documentation build.
+# Evidence: https://www.mkdocs.org/user-guide/configuration/#nav
+      - Built-in OAuth with OpenID Connect: guides/built-in-oauth-oidc.md
       - Egress-Zero GitOps: guides/egress-zero-gitops.md
       - Local Multi-Repo Dev: guides/local-multi-repo-dev.md
       - Zero Egress ECR Access: guides/zero-egress-ecr-access.md

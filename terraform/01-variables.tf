@@ -425,6 +425,59 @@ variable "external_auth_providers_enabled" {
   nullable    = true
 }
 
+# Covers: description, type, name, client_id, client_secret_secret_id, issuer, mapping_method, ca, extra_scopes, extra_authorize_parameters, claims, email, groups, preferred_username, default, nullable, condition, error_message
+# Does: Declares a plan-known map of generic OpenID providers and validates critical choices.
+# Why: Stable map keys preserve cardinality while resource-body cluster values remain unknown.
+# Change: Adding a map entry creates one provider; removing it deletes that provider.
+# Trap: The secret locator avoids source literals but its resolved value enters state.
+# Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/for_each
+variable "oidc_identity_providers" {
+  description = <<-EOT
+    Generic OpenID Connect identity providers for the built-in OpenShift OAuth
+    server. Map keys are stable Terraform identities. client_secret_secret_id
+    names an AWS Secrets Manager secret whose complete SecretString is the OIDC
+    client secret; the resolved value is sensitive and remains in Terraform
+    state. RHCS 1.7.7 requires a broad lifecycle workaround that hides changes
+    to ca, client_id, client_secret, issuer, extra_scopes,
+    extra_authorize_parameters, and claims; replace the affected resource when
+    any member changes. Leave the map empty when no provider is required.
+  EOT
+  type = map(object({
+    name                       = string
+    client_id                  = string
+    client_secret_secret_id    = string
+    issuer                     = string
+    mapping_method             = optional(string, "claim")
+    ca                         = optional(string)
+    extra_scopes               = optional(list(string), [])
+    extra_authorize_parameters = optional(map(string), {})
+    claims = object({
+      email              = optional(list(string), [])
+      groups             = optional(list(string), [])
+      name               = optional(list(string), [])
+      preferred_username = list(string)
+    })
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([
+      for provider in values(var.oidc_identity_providers) :
+      contains(["add", "claim", "generate", "lookup"], provider.mapping_method)
+    ])
+    error_message = "Every OIDC mapping_method must be one of: add, claim, generate, lookup."
+  }
+
+  validation {
+    condition = alltrue([
+      for provider in values(var.oidc_identity_providers) :
+      can(regex("^https://[^?#]+$", provider.issuer))
+    ])
+    error_message = "Every OIDC issuer must use HTTPS and contain no query string or fragment."
+  }
+}
+
 variable "enable_bootstrap_admin_user" {
   description = "Create short-lived HTPasswd bootstrap admin (module.bootstrap_admin). Default false. Bootstrap scripts set this true via targeted apply, then false to tear down. Relates to #29."
   type        = bool

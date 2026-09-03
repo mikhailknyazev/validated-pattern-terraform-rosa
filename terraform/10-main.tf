@@ -116,8 +116,14 @@ check "byo_vpc_required_vars" {
 
 check "external_auth_cluster_admin_conflict" {
   assert {
-    condition     = !(var.external_auth_providers_enabled == true && var.enable_cluster_admin == true)
-    error_message = "enable_cluster_admin cannot be true when external_auth_providers_enabled is true. External auth providers reject rhcs_identity_provider resources."
+    # Covers: condition, error_message
+    # Does: Refuses built-in OAuth resources when external authentication removes that surface.
+    # Why: One shared guard keeps every authentication-mode conflict in one decision point.
+    # Change: Adding another built-in OAuth feature requires extending this same condition.
+    # Trap: A separate check can drift and allow an invalid mixed authentication configuration.
+    # Evidence: https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/authentication_and_authorization/sts-understanding-authentication
+    condition     = !(var.external_auth_providers_enabled == true && (var.enable_cluster_admin == true || length(var.oidc_identity_providers) > 0))
+    error_message = "enable_cluster_admin and oidc_identity_providers must be disabled when external_auth_providers_enabled is true. External auth providers reject rhcs_identity_provider resources."
   }
 }
 
