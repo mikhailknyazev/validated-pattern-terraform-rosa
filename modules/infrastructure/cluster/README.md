@@ -157,6 +157,7 @@ module "cluster" {
 | enable_termination_protection | Enable cluster termination protection. When enabled, prevents accidental cluster deletion via ROSA CLI. Note: Disabling protection requires manual action via OCM console | `bool` | `false` |
 | api_endpoint_allowed_cidrs | Optional list of IPv4 CIDR blocks allowed to access the ROSA HCP API endpoint. By default, the VPC endpoint security group only allows access from within the VPC. Useful for VPN ranges, bastion hosts, or other VPCs | `list(string)` | `[]` |
 | external_auth_providers_enabled | Enable external authentication providers. When true, RHCS API rejects rhcs_identity_provider resources. Create-time only (immutable after creation). Use `make cluster.<name>.break-glass-login` for temporary admin access | `bool` | `null` |
+| create_cluster_credentials_secret | Create the long-lived break-glass credentials secret from caller-known intent. The root sets this from `enable_cluster_admin`; direct module callers must set it explicitly when supplying `admin_password_for_bootstrap`. | `bool` | `false` |
 | enable_persistent_dns_domain | Enable persistent DNS domain registration. When true, creates rhcs_dns_domain resource that persists between cluster creations (not gated by persists_through_sleep). When false, ROSA uses default DNS domain | `bool` | `false` |
 | tags | Tags to apply to the cluster | `map(string)` | `{}` |
 | additional_machine_pools | Map of additional custom machine pools beyond default pools. Supports advanced features: taints, labels, kubelet configs, tuning configs, version pinning, capacity reservations | `map(object)` | `{}` |
@@ -197,7 +198,19 @@ Rendered into `gitops_bootstrap_hub_values` / `gitops_bootstrap_spoke_values` (s
 
 ### Identity Provider
 
-When `enable_identity_provider = true` (root `enable_cluster_admin`), the module creates a long-lived HTPasswd break-glass admin via `modules/infrastructure/htpasswd-idp` and stores credentials once in AWS Secrets Manager as `{cluster_name}-credentials` (JSON: `user`, `password`, `url`). That secret is the single source of truth for `make login` / `show-credentials` (no separate plain-password secret; Fixes #28). GitOps bootstrap uses a separate short-lived `module.bootstrap_admin` (also `htpasswd-idp`, different IDP/user names) — both can coexist (#29). Bootstrap does not require the break-glass secret.
+The long-lived administrator can be enabled before the cluster exists, enabled
+on an existing cluster, or disabled again, and all three plan without a
+target-first password apply. A count predicate may not reach anything unknown at
+plan time: the caller-known booleans below control cardinality, while the
+generated password is referenced only inside resource bodies. The cluster
+caller also tells the shared HTPasswd module that the password comes from the
+root-owned generator; the child therefore does not infer whether to create a
+second password from an unknown value. Disabling deletes the generated password,
+so re-enabling produces a different one unless `admin_password_override` is set.
+The separate targeted `module.bootstrap_admin` workflow still isolates temporary
+bootstrap access from unrelated cluster reconciliation.
+
+When `enable_identity_provider = true` (root `enable_cluster_admin`), the module creates a long-lived HTPasswd break-glass admin via `modules/infrastructure/htpasswd-idp`. `create_cluster_credentials_secret` independently controls the AWS Secrets Manager `{cluster_name}-credentials` object (JSON: `user`, `password`, `url`), so its count remains known when the password is generated during apply and the secret can survive cluster sleep. The root sets both from the same long-lived administrator intent. Direct module callers must set the secret boolean explicitly. That secret is the single source of truth for `make login` / `show-credentials` (no separate plain-password secret; Fixes #28). GitOps bootstrap uses a separate short-lived `module.bootstrap_admin` (also `htpasswd-idp`, different IDP/user names) — both can coexist (#29). Bootstrap does not require the break-glass secret.
 
 ### External Authentication Providers
 

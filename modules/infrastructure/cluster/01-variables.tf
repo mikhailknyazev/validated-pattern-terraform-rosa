@@ -866,6 +866,19 @@ variable "enable_identity_provider" {
   nullable    = false
 }
 
+# Covers: description, type, default, nullable
+# Does: Carries caller-known secret lifecycle intent independently of generated password value.
+# Why: Terraform must know resource count before a generated password exists at apply.
+# Change: True creates the long-lived secret; false removes it on the next apply.
+# Trap: The password may remain unknown during plan and must never regain count authority.
+# Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/count
+variable "create_cluster_credentials_secret" {
+  description = "Create the long-lived break-glass credentials secret. This caller-known intent is separate from enable_identity_provider so the secret survives cluster sleep without deriving resource count from a generated password."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "external_auth_providers_enabled" {
   description = "Enable external authentication providers on the ROSA HCP cluster. When true, the RHCS API rejects rhcs_identity_provider resources. Create-time only (immutable after cluster creation)."
   type        = bool
@@ -881,7 +894,7 @@ variable "admin_username" {
 }
 
 variable "admin_password_for_bootstrap" {
-  description = "Break-glass admin password for identity provider and credentials secret. Not used for GitOps bootstrap (#29)."
+  description = "Break-glass admin password for identity provider and credentials secret. It may be unknown during planning and must never control resource count. Not used for GitOps bootstrap (#29)."
   type        = string
   default     = null
   nullable    = true

@@ -405,8 +405,14 @@ variable "tags_override" {
   nullable    = true
 }
 
+# Covers: description
+# Does: Documents one boolean as the complete long-lived administrator lifecycle control.
+# Why: Caller-owned intent must control count in both enable and disable directions.
+# Change: True creates the path; false removes its IDP, membership, password, and secret.
+# Trap: Bootstrap administration remains a separate temporary targeted workflow.
+# Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/count
 variable "enable_cluster_admin" {
-  description = "Create a long-lived HTPasswd break-glass cluster admin and store credentials in AWS Secrets Manager. Default false. Not used by GitOps bootstrap (see enable_bootstrap_admin_user). Relates to #29."
+  description = "Create or remove a long-lived HTPasswd break-glass cluster admin and its AWS Secrets Manager credential. Both toggle directions are plan-safe because resource count follows this boolean rather than the generated password. Default false. Not used by GitOps bootstrap (see enable_bootstrap_admin_user). Relates to #29."
   type        = bool
   default     = false
   nullable    = false

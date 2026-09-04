@@ -6,12 +6,19 @@
 module "idp" {
   source = "../htpasswd-idp"
 
-  enabled     = var.enabled
-  cluster_id  = var.cluster_id
-  password    = var.password
-  idp_name    = var.idp_name
-  username    = var.username
-  admin_group = var.admin_group
+  # Covers: enabled, cluster_id, password, generate_password, idp_name, username, admin_group
+  # Does: Forwards one bootstrap identity and its plan-known password-source choice.
+  # Why: The shared child must not infer resource count from an apply-time password.
+  # Change: Changing identity values replaces or updates only the bootstrap-owned path.
+  # Trap: Omitting generate_password for a generated caller value recreates unknown count.
+  # Evidence: https://developer.hashicorp.com/terraform/language/meta-arguments/count
+  enabled           = var.enabled
+  cluster_id        = var.cluster_id
+  password          = var.password
+  generate_password = var.generate_password
+  idp_name          = var.idp_name
+  username          = var.username
+  admin_group       = var.admin_group
 }
 
 # Preserve state addresses if a bootstrap admin was mid-lifecycle during the refactor.
